@@ -5,13 +5,21 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
     testDir: './tests/e2e',
 
-    // ➡️ FIX: Removed the conflicting testMatch line. Playwright will now accept the file path from the CLI.
-    
+    // ➡️ FIX: Explicitly set output directory outside the default volatile location.
+    outputDir: './artifact-history', 
+
     // ⏱️ Hard set per-test timeout to 120 minutes (2 hours)
     timeout: 120 * 60 * 1000,
     
     // OPTIMIZATION: Set workers to a stable number
     workers: process.env.CI ? 1 : 3,
+
+    // FIX: Retain artifacts for successful runs and failures
+    retries: 1, 
+    reporter: [
+      ['list'], // Standard list reporter
+      ['html', { outputFolder: 'playwright-report', open: 'never' }]
+    ],
 
     use: {
         navigationTimeout: 60000, // 60s per page load

@@ -1,35 +1,25 @@
-// tests/e2e/p0-high-traffic-audit.spec.ts
-import { test, devices } from '@playwright/test';
-import { siteConfigs, type SiteName } from './config/sites';
-import * as fs from 'fs'; 
+// tests/e2e/p0-crawl-audit.spec.ts
+import { test, devices } from '@playwright/test'; 
+import { siteConfigs, type SiteConfig, type SiteName } from './config/sites';
 
-// Define the structure for a soft failure
+// Define the structure for a soft failure (modern structure)
 type SoftFailure = {
   sourcePath: string;
   ctaText: string;
   reason: string;
   details: any;
-  csvRow: string; 
 };
 
 // Define REDIRECT_TIMEOUT globally
-const REDIRECT_TIMEOUT = 15000; // 15 seconds for robust redirect monitoring
-const CSV_FILE_PATH = 'audit_failures_report.csv';
+const REDIRECT_TIMEOUT = 15000; 
 
-// Function to safely escape strings for CSV (removes newlines, quotes)
-function csvEscape(str: string) {
-    return `"${str.replace(/"/g, '""').replace(/(\r\n|\n|\r)/gm, ' ')}"`;
-}
-
-// ➡️ FIX: Final robust humanDelay function (only accepts page argument)
-async function humanDelay(page: any): Promise<void> {
-    const minMs = 500;
-    const maxMs = 2000;
+// ➡️ ANTI-DETECTION: Human-like wait function (FIXED TS ERROR HERE)
+async function humanDelay(page: any, minMs: number = 500, maxMs: number = 2000): Promise<void> {
     const delay = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
     await page.waitForTimeout(delay);
 }
 
-// ➡️ ANTI-DETECTION: Remove webdriver detection scripts
+// ➡️ ANTI-DETECTION: Remove webdriver detection scripts (FIXED navigator.languages)
 async function removeWebdriverDetection(page: any) {
     await page.addInitScript(() => {
         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
@@ -39,7 +29,9 @@ async function removeWebdriverDetection(page: any) {
                 ? Promise.resolve({ state: Notification.permission } as PermissionStatus)
                 : originalQuery(parameters);
         Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-        Object.defineProperty(navigator.languages, { get: () => ['ro-RO', 'ro', 'en-US', 'en'] });
+        
+        // ➡️ FIX: Correctly redefine the languages property on the navigator object
+        Object.defineProperty(navigator, 'languages', { get: () => ['ro-RO', 'ro', 'en-US', 'en'] });
     });
 }
 
@@ -64,70 +56,72 @@ async function closeModalOrPopup(page: any) {
 }
 
 
-test('P0 - High Traffic CTA Audit (Redirect Chain Check)', async ({ browser, page, request }, testInfo) => { 
-  test.setTimeout(120 * 60 * 1000); 
+// Decide if we should visit a path based on the include/exclude patterns
+function shouldVisitPath(path: string, cfg: SiteConfig): boolean {
+  const included = cfg.includePatterns.some((re) => re.test(path));
+  if (!included) return false;
+  const excluded = cfg.excludePatterns.some((re) => re.test(path));
+  return !excluded;
+}
 
-  const projectName = testInfo.project.name as SiteName;
-  console.log(`[${projectName}] Starting redirect chain audit.`);
-  const cfg = siteConfigs[projectName];
-  
+test('P0 - Affiliate Full Site Crawl Audit', async ({ browser, page, request }, testInfo) => { 
+  // ➡️ FINAL UPDATE: Timeout set to 120 minutes
+  test.setTimeout(120 * 60 * 1000);
+
+  const projectName = testInfo.project.name as SiteName;
+  console.log(`[${projectName}] Starting refactored full crawl.`);
+  const cfg = siteConfigs[projectName];
+
+  // Access baseURL from testInfo.project.use
   const projectBaseURL = testInfo.project.use.baseURL; 
   if (!projectBaseURL) { throw new Error(`Base URL not found for project: ${projectName}`); }
   const baseURL = projectBaseURL;
-  
-  const softFailures: SoftFailure[] = [];
-  
-  const viewportSettings = testInfo.project.use.viewport || devices['Desktop Chrome'].viewport;
-  const ignoreHTTPSErrors = testInfo.project.use.ignoreHTTPSErrors;
-  const userAgent = testInfo.project.use.userAgent;
-  
-  const csvHeader = 'Project,Source Page,CTA Text,Issue Type,Details,Failing URL\n';
-  let csvRows = fs.existsSync(CSV_FILE_PATH) ? '' : csvHeader;
 
+  const visited = new Set<string>();
+  const queue: string[] = [...cfg.startPaths];
+
+  // Array to collect all soft failures (modern structure)
+  const softFailures: SoftFailure[] = []; 
+  
+  // Just for reporting
+  let totalCtaPlacementsChecked = 0;
+
+  // ➡️ ANTI-DETECTION: Remove webdriver detection on base page
   await removeWebdriverDetection(page); 
 
+  while (queue.length > 0 && visited.size < cfg.maxPages) {
+    const currentPath = queue.shift()!;
+    if (visited.has(currentPath)) continue;
+    visited.add(currentPath);
 
-  for (const currentPath of cfg.highTrafficPaths) {
-    // Check if the current page should be entirely skipped (e.g., if it's in sites.ts skippedPaths)
-    if (cfg.skippedPaths && cfg.skippedPaths.includes(currentPath)) {
-        console.log(`[${projectName}] ⚠️ SKIPPING known stalling page: ${currentPath}`);
-        continue; // Skip to the next path
-    }
-    
-    const auditPage = await browser.newPage({ 
-        viewport: viewportSettings, 
-        ignoreHTTPSErrors: ignoreHTTPSErrors, 
-        userAgent: userAgent,
-    }); 
-    await removeWebdriverDetection(auditPage); 
+    if (!shouldVisitPath(currentPath, cfg)) continue;
 
-    await test.step(`Audit Page: ${currentPath}`, async () => {
-      let pageElementCount = 0; 
-      
-      // 1. Navigate to the page with realistic timing
-      try {
-        await auditPage.setExtraHTTPHeaders({ 'Referer': baseURL + (cfg.highTrafficPaths[0] || '/'), });
-        await auditPage.goto(baseURL + currentPath, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-        await auditPage.waitForLoadState('domcontentloaded');
-      } catch (error: any) {
+    await test.step(`Visit ${currentPath}`, async () => {
+      // 1) Navigate to the page
+      try {
+        // ➡️ Apply anti-detection and realistic headers
+        await page.setExtraHTTPHeaders({ 'Referer': baseURL + (cfg.startPaths[0] || '/'), });
+        await page.goto(baseURL + currentPath, { // Use full URL for robustness
+          waitUntil: 'domcontentloaded',
+          timeout: 30_000, // 30s per page load
+        });
+        await page.waitForLoadState('domcontentloaded'); // Ensure DOM is fully loaded
+        await closeModalOrPopup(page); 
+        await humanDelay(page, 500, 1000); // ⬅️ Call is explicit
+
+      } catch (error: any) {
         // Soft failure on navigation failure
-        const csvDetail = `Page Load Failure: ${error?.message ?? String(error)}`;
-        const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape('Page Load')},${csvEscape('Page Load Failure')},${csvEscape(csvDetail)},${csvEscape(baseURL + currentPath)}`;
-        csvRows += csvRow + '\n';
-        
-        softFailures.push({ sourcePath: currentPath, ctaText: 'Page Load', reason: 'Page Load Failure', details: { message: error?.message ?? String(error) }, csvRow: csvRow });
-        console.error(`[${projectName}] ❌ FAIL Page Load on ${currentPath}: ${error?.message ?? String(error)}`);
-        await auditPage.close(); 
-        return; 
-      }
+        softFailures.push({ sourcePath: currentPath, ctaText: 'Page Load', reason: 'Page Load Failure', details: { message: error?.message ?? String(error) }});
+        console.error(`[${projectName}] ❌ FAIL Page Load on ${currentPath}: ${error?.message ?? String(error)}`);
+        return; 
+      }
 
-      await closeModalOrPopup(auditPage); 
-      await humanDelay(auditPage); // ⬅️ Call is simplified
 
-      // 2. ➡️ LINK SCRAPING: Find ALL links and filter by URL pattern
-      const allLinks = auditPage.locator('a[href]');
+      // 2. ➡️ LINK SCRAPING: Find ALL links and filter by URL pattern (New Logic)
+      const allLinks = page.locator('a[href]');
 
       const allLinkData = await allLinks.evaluateAll((nodes, options) => {
+        // Options from the new audit script for safety
         const affiliateUrlPattern = options.affiliateUrlPattern as RegExp;
         const baseURL = options.baseURL as string; 
 
@@ -150,47 +144,42 @@ test('P0 - High Traffic CTA Audit (Redirect Chain Check)', async ({ browser, pag
             hasDataCasino: n.hasAttribute('data-casino') || n.hasAttribute('data-casino-name'),
             hasTrackingAttributes: n.classList.contains('affiliate-meta-link') && (n.hasAttribute('data-casino') || n.hasAttribute('data-casino-name')),
             target: n.getAttribute('target'),
-            text: (n as HTMLElement).textContent?.trim().replace(/[\r\n]/gm, ' ').replace(/"/g, '""') || 'No Text',
-            selector: 'a[href="' + href + '"]'
+            text: (n as HTMLElement).textContent?.trim().replace(/\s+/g, ' ') || 'No Text',
+            selector: 'a[href="' + href + '"]' // Selector for clicking
           };
         }).filter(item => item !== null);
       }, { affiliateUrlPattern: cfg.affiliateUrlPattern, ctaSelector: cfg.ctaSelector, baseURL: baseURL });
       
       const affiliateLinkCount = allLinkData.length;
-      
+      totalCtaPlacementsChecked += affiliateLinkCount; // Update total count
+
       if (affiliateLinkCount === 0) {
         console.warn(`[${projectName}] [WARN] No affiliate links found matching pattern on ${currentPath}`);
-        await auditPage.close();
-        return;
+        // Continue to link discovery (Step 4)
       }
       
-      // 3. Process CTA Data and Execute Audit
+      // 3. Process CTA Data and Execute Audit (New Logic)
       for (let i = 0; i < affiliateLinkCount; i++) {
         const { href, target, text, hasTrackingAttributes, hasClass, hasDataCasino, selector } = allLinkData[i];
         
-        pageElementCount++;
-        const ctaId = `LINK #${pageElementCount} (${text})`;
+        const ctaId = `LINK #${i + 1} (${text})`;
 
         // --- Preliminary Checks ---
         let skipAudit: boolean = false; 
 
-        // ➡️ FINALIZED BETANO SKIP: Targeted skip by Href
+        // ➡️ FIX 2: Check for Betano exclusion
         if (projectName === 'casino.com.ro' && typeof href === 'string' && href.toLowerCase().includes('betano')) {
             console.log(`[${projectName}] ⚠️ SKIPPING Betano link to bypass known external stall.`);
             continue; 
         }
 
-        // ATTRIBUTE ENFORCEMENT
+        // ATTRIBUTE ENFORCEMENT (Business Logic Check)
         if (!hasTrackingAttributes) {
              let missingDetails: string[] = []; 
              if (!hasClass) missingDetails.push('.affiliate-meta-link class');
              if (!hasDataCasino) missingDetails.push('data-casino/data-casino-name');
 
-             const csvDetail = `Missing Attributes: ${missingDetails.join(', ')}`;
-             const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape('Tracking Attribute Missing')},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`;
-             csvRows += csvRow + '\n';
-             
-             softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: 'Missing Tracking Attributes (Business Logic)', details: csvDetail, csvRow: csvRow });
+             softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: 'Missing Tracking Attributes (Business Logic)', details: `Affiliate link is missing: ${missingDetails.join(', ')}` });
              console.error(`[${projectName}] ❌ FAIL ${ctaId} from ${currentPath}: Missing Attributes: ${missingDetails.join(', ')}`);
              skipAudit = true;
         }
@@ -208,8 +197,8 @@ test('P0 - High Traffic CTA Audit (Redirect Chain Check)', async ({ browser, pag
             try {
                 // 1. Monitor the click action
                 const [newPopup, response] = await Promise.all([
-                    auditPage.waitForEvent('popup', { timeout: REDIRECT_TIMEOUT }),
-                    auditPage.evaluate((s) => {
+                    page.waitForEvent('popup', { timeout: REDIRECT_TIMEOUT }),
+                    page.evaluate((s) => {
                         const element = document.querySelector(s);
                         if (element) { (element as HTMLAnchorElement).click(); }
                     }, selector),
@@ -234,11 +223,7 @@ test('P0 - High Traffic CTA Audit (Redirect Chain Check)', async ({ browser, pag
                 if (internalRequest) {
                     const internalResponse = await internalRequest.response();
                     if (internalResponse && internalResponse.status() === 404) {
-                        const csvDetail = `Internal tracking link returned 404. URL: ${internalRequest.url()}`;
-                        const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape('Internal Redirect 404')},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`;
-                        csvRows += csvRow + '\n';
-                        
-                        softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: 'Internal Redirect 404', details: csvDetail, csvRow: csvRow });
+                        softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: 'Internal Redirect 404', details: `Internal tracking link returned 404. URL: ${internalRequest.url()}` });
                         console.error(`[${projectName}] ❌ FAIL ${ctaId} from ${currentPath}: Internal Redirect 404`);
                     }
                 }
@@ -249,18 +234,14 @@ test('P0 - High Traffic CTA Audit (Redirect Chain Check)', async ({ browser, pag
                 const projectOrigin = new URL(baseURL).origin; 
 
                 if (finalOrigin === projectOrigin) {
-                    const csvDetail = `Redirection failed to leave domain. Final URL: ${finalUrl}`;
-                    const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape('Final URL is Internal')},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`;
-                    csvRows += csvRow + '\n';
-
-                    softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: 'Final URL is Internal', details: csvDetail, csvRow: csvRow });
+                    softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: 'Final URL is Internal', details: `Redirection failed to leave the domain. Final URL: ${finalUrl}` });
                     console.error(`[${projectName}] ❌ FAIL ${ctaId} from ${currentPath}: Final URL is Internal - ${finalUrl}`);
                 } else {
                     console.log(`[${projectName}] ✅ PASS ${ctaId} from ${currentPath} -> Redirected to ${finalOrigin}`);
                 }
 
             } catch (error: any) {
-                // WAF/TIMEOUT FIX: Fail-Forward on timeout
+                // WAF/TIMEOUT FIX: Fail-Forward if an external URL was successfully grabbed on timeout
                 let finalUrlOnTimeout: string | null = null;
                 if (popup) {
                     try { finalUrlOnTimeout = (popup.url() || ''); } catch {}
@@ -286,11 +267,7 @@ test('P0 - High Traffic CTA Audit (Redirect Chain Check)', async ({ browser, pag
                 
                 // If we couldn't bypass, log the original failure
                 const logError = error.message.includes('Timeout') ? 'Redirect Timeout' : reason;
-                const csvDetail = `Error: ${logError}. Message: ${error.message}`;
-                const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape('Redirection Failure')},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`;
-                csvRows += csvRow + '\n';
-                
-                softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: logError, details: csvDetail, csvRow: csvRow });
+                softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: logError, details: { error: error.message } });
                 console.error(`[${projectName}] ❌ FAIL ${ctaId} from ${currentPath}: ${logError}`);
                 
             } finally {
@@ -300,21 +277,69 @@ test('P0 - High Traffic CTA Audit (Redirect Chain Check)', async ({ browser, pag
                 }
             }
         }
-      } 
-    }); 
-    // Ensure the stable auditPage is closed after its step finishes
-    await auditPage.close(); 
-  } 
+      } // End of Link iteration
+      
+      // 4) Discover new internal links to keep crawling (Existing logic remains)
+      const links = page.locator('a[href]');
+      const hrefs = await links.evaluateAll((nodes) =>
+        nodes
+          .map((n) => (n as HTMLAnchorElement).getAttribute('href'))
+          .filter((h): h is string => !!h)
+      );
 
-  // ➡️ FINAL STEP: Write all accumulated CSV data to the file
-  fs.writeFileSync(CSV_FILE_PATH, csvRows);
+      for (const rawHref of hrefs) {
+        if (
+          rawHref.startsWith('#') ||
+          rawHref.startsWith('mailto:') ||
+          rawHref.startsWith('tel:') ||
+          rawHref.startsWith('javascript:')
+        ) {
+          continue;
+        }
 
-  // Final Reporting (Attach collected soft failures)
-  if (softFailures.length > 0) {
-    const failureString = JSON.stringify(softFailures, null, 2);
-    testInfo.attachments.push({ name: `❌ CTA Audit Failures (${softFailures.length} total)`, contentType: 'application/json', body: Buffer.from(failureString, 'utf8') });
-    testInfo.annotations.push({ type: 'Audit Failures', description: `${softFailures.length} audit failures found. Check attachment.` });
+        const currentUrl = new URL(page.url());
+        const url = new URL(rawHref, currentUrl);
+
+        // Only follow same-origin links
+        if (url.origin !== currentUrl.origin) continue;
+
+        const nextPath = url.pathname;
+
+        if (!visited.has(nextPath) && shouldVisitPath(nextPath, cfg)) {
+          queue.push(nextPath);
+        }
+      }
+      // End of link discovery
+    });
   }
 
-  console.log(`[${projectName}] Audit Completed. Failures: ${softFailures.length}. Report saved to ${CSV_FILE_PATH}`);
+  // CRITICAL: Attach results after the main loop finishes
+  if (softFailures.length > 0) {
+    const failureString = JSON.stringify(softFailures, null, 2);
+    testInfo.attachments.push({
+      name: `❌ CTA Link Failures (${softFailures.length} total)`,
+      contentType: 'application/json',
+      body: Buffer.from(failureString, 'utf8'),
+    });
+    
+    // Add a highly visible annotation to the report header
+    testInfo.annotations.push({
+        type: 'Bad Links Found', 
+        description: `${softFailures.length} bad CTA links were found. See attachments.` 
+    });
+  }
+
+  console.log(
+    `[${projectName}] COMPLETED. Pages visited = ${visited.size}, CTA placements checked = ${totalCtaPlacementsChecked}. Failures: ${softFailures.length}`
+  );
 });
+
+
+
+
+
+
+
+
+
+
