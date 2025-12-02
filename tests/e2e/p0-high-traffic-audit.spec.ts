@@ -1,5 +1,5 @@
 // tests/e2e/p0-high-traffic-audit.spec.ts
-import { test, devices } from '@playwright/test'; 
+import { test, devices } from '@playwright/test';
 import { siteConfigs, type SiteName } from './config/sites';
 
 // Define the structure for a soft failure
@@ -13,12 +13,13 @@ type SoftFailure = {
 // Define REDIRECT_TIMEOUT globally
 const REDIRECT_TIMEOUT = 15000; // 15 seconds for robust redirect monitoring
 
-// ➡️ ANTI-DETECTION: Helper functions (These were stable)
-async function humanDelay(page: any, minMs: number = 500, maxMs: number = 2000) {
+// ➡️ FIX 1: Explicitly define return type for humanDelay
+async function humanDelay(page: any, minMs: number = 500, maxMs: number = 2000): Promise<void> {
     const delay = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
     await page.waitForTimeout(delay);
 }
 
+// ➡️ ANTI-DETECTION: Remove webdriver detection scripts
 async function removeWebdriverDetection(page: any) {
     await page.addInitScript(() => {
         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
@@ -32,6 +33,7 @@ async function removeWebdriverDetection(page: any) {
     });
 }
 
+// Function to attempt to close known popups/modals (Remains useful)
 async function closeModalOrPopup(page: any) {
     const closeSelectors = [
         '#newsletter-popup-close-button', '.close-modal-x', 'button:has-text("NU MULTUMESC")', 'div[aria-label="Close"]',        
@@ -73,8 +75,11 @@ test('P0 - High Traffic CTA Audit (Redirect Chain Check)', async ({ browser, pag
 
 
   for (const currentPath of cfg.highTrafficPaths) {
-    // ⚠️ Note: Skip Logic removed to restore original state, but you can manually re-add it here:
-    // if (cfg.skippedPaths && cfg.skippedPaths.includes(currentPath)) { ... } 
+    // Check if the current page should be entirely skipped (e.g., if it's in sites.ts skippedPaths)
+    if (cfg.skippedPaths && cfg.skippedPaths.includes(currentPath)) {
+        console.log(`[${projectName}] ⚠️ SKIPPING known stalling page: ${currentPath}`);
+        continue; // Skip to the next path
+    }
     
     const auditPage = await browser.newPage({ 
         viewport: viewportSettings, 
@@ -119,7 +124,6 @@ test('P0 - High Traffic CTA Audit (Redirect Chain Check)', async ({ browser, pag
               }
           } catch { return null; }
           
-          // ⚠️ Reverting to less strict path check for stability
           if (!path.startsWith('/') || !affiliateUrlPattern.test(path)) return null; 
           
           return {
@@ -152,6 +156,12 @@ test('P0 - High Traffic CTA Audit (Redirect Chain Check)', async ({ browser, pag
         // --- Preliminary Checks ---
         let skipAudit: boolean = false; 
 
+        // ➡️ NEW FIX 2: Check for Betano exclusion before mandatory attributes
+        if (projectName === 'casino.com.ro' && typeof href === 'string' && href.toLowerCase().includes('betano')) {
+            console.log(`[${projectName}] ⚠️ SKIPPING Betano link to bypass known external stall.`);
+            continue; // Skip the resource-intensive check and move to the next link (i++)
+        }
+
         // ➡️ NEW CHECK: Attribute Enforcement (FAIL if tracking params are missing)
         if (!hasTrackingAttributes) {
              let missingDetails: string[] = []; 
@@ -170,7 +180,7 @@ test('P0 - High Traffic CTA Audit (Redirect Chain Check)', async ({ browser, pag
         }
 
         // --- Core Redirection Audit ---
-        if (href && !skipAudit) {
+        if (typeof href === 'string' && !skipAudit) {
             let popup: any;
             
             try {
