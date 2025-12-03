@@ -27,17 +27,16 @@ const SLUG_PATTERN = `(${ALL_CASINOS.replace(/ /g, '')})`;
 const URL_END = '(\\/?|\\?.*)$';
 const RE_FLAGS = 'i'; 
 
-// Offer Type Definitions (No longer used directly in the pattern, but kept for clarity)
-const SUPERCAZINO_TYPES = 'tc|bn|lc|cp|custom|cazino|slot_games';
-const CASINO_COM_RO_TYPES = 'tc|bn|lc|cp|custom|casino|slot';
-const BETURI_SLOTURI_TYPES = 'tc|bn|cp|lc'; 
-const JOCPACANELE_TYPES = 'casinos|custom|offer_wd|offer_bn|offer_lc|offer_ps|offer_fs|offer_lt|bn|wd|lc|ps|fs|lt';
-const JOCURICAZINOURI_TYPES = 'tc|so1|cp|so2'; 
-
+// ➡️ UNIVERSAL CRAWL PATTERNS: FINAL MAXIMAL COVERAGE FOR SITEMAP LINKS
+const UNIVERSAL_CRAWL_PATTERNS = [
+    /^\/$/, // 1. Home page
+    // 2. ULTIMATE CATCH-ALL: Matches any path starting with a slash, allowing letters, 
+    // numbers, hyphens, underscores, slashes, AND CRITICALLY, THE PERIOD (.).
+    /^\/[\w\d-./]+$/i, 
+];
 
 /**
- * ➡️ FIX: Creates a simple, broad regex matching the base path plus ANYTHING.
- * This ensures all custom links are captured regardless of casino name/offer type.
+ * Creates a simple, broad regex matching the base path plus ANYTHING.
  */
 const createAffiliatePattern = (domainPath: string) => {
     // Escapes common regex characters and constructs the full path pattern
@@ -57,13 +56,8 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
     supercazino: {
         startPaths: ['/'], 
         ctaSelector: 'a.affiliate-meta-link[data-casino]',
-        includePatterns: [
-            /^\/$/, /^\/casino-online\/?/, /^\/bonusuri-casino\/?/, /^\/casino-online-.*\/?/, /^\/blog\/.*/,
-        ],
-        excludePatterns: [
-            /^\/wp-admin\/?/, /^\/wp-json\/?/, /^\/tag\/.*/, /^\/author\/.*/, /^\/feed\/?/,
-        ],
-        // ➡️ CHANGED: maxPages set to 100
+        includePatterns: UNIVERSAL_CRAWL_PATTERNS,
+        excludePatterns: [], 
         maxPages: 100,
         highTrafficPaths: [
             '/', '/bonus-fara-depunere-2025/', '/rotiri-gratuite-fara-depunere-2025/',
@@ -84,14 +78,8 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
     jocpacanele: {
         startPaths: ['/'],
         ctaSelector: 'a.affiliate-meta-link[data-casino]',
-        includePatterns: [
-            /^\/$/, /^\/bonusuri-casino\/?/, /^\/casino-online\/?/, 
-            /^\/blog\/.*/, /^\/jocuri-.*\/?/,
-        ],
-        excludePatterns: [
-            /^\/wp-admin\/?/, /^\/wp-json\/?/, /^\/tag\/.*/, /^\/author\/.*/, /^\/feed\/?/,
-        ],
-        // ➡️ CHANGED: maxPages set to 100
+        includePatterns: UNIVERSAL_CRAWL_PATTERNS,
+        excludePatterns: [],
         maxPages: 100,
         highTrafficPaths: [
             '/', '/jocuri/pacanele-clasice/', '/jocuri-cu-pacanele/shinning-crown-pacanele-online/',
@@ -120,15 +108,8 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
     jocuricazinouri: {
         startPaths: ['/'],
         ctaSelector: 'a.affiliate-meta-link[data-casino-name]',
-        includePatterns: [
-            /^\/$/, /^\/casino-online-romania\/?/, /^\/casino-online\/?/, 
-            /^\/blog\/.*/,
-        ],
-        excludePatterns: [
-            /^\/wp-admin\/?/, /^\/wp-json\/?/, /^\/tag\/.*/, 
-            /^\/author\/.*/, /^\/feed\/?/,
-        ],
-        // ➡️ CHANGED: maxPages set to 100
+        includePatterns: UNIVERSAL_CRAWL_PATTERNS,
+        excludePatterns: [],
         maxPages: 100,
         highTrafficPaths: [
             '/', '/cazinouri-online-cu-bonus-fara-depunere/', '/casino/betano/',
@@ -143,9 +124,9 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
     jocsloturi: {
         startPaths: ['/'], 
         ctaSelector: 'a.affiliate-meta-link[data-casino]',
-        includePatterns: [], excludePatterns: [], 
-        // ➡️ CHANGED: maxPages set to 100
-        maxPages: 100, 
+        includePatterns: UNIVERSAL_CRAWL_PATTERNS,
+        excludePatterns: [], 
+        maxPages: 100,
         highTrafficPaths: [
             '/', '/bonus-fara-depunere-sloturi/', '/blog/cum-se-joaca-barbut/',
             '/sloturi-casino-online/', '/blog/depunere-minima-10-lei/', '/jocuri/sloturi-777/',
@@ -159,9 +140,9 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
     'casino.com.ro': {
         startPaths: ['/'],
         ctaSelector: 'a.affiliate-meta-link[data-casino]',
-        includePatterns: [], excludePatterns: [], 
-        // ➡️ CHANGED: maxPages set to 100
-        maxPages: 100, 
+        includePatterns: UNIVERSAL_CRAWL_PATTERNS,
+        excludePatterns: [], 
+        maxPages: 100,
         highTrafficPaths: [
             '/', '/jocuri/pacanele-gratis/', '/new-no-deposit/', '/bonusuri-fara-depunere-online-2025/',
             '/rotiri-fara-depunere-online-2025/', '/bonusuri-fara-depunere-pmax/', '/bonus-fara-depunere/',
@@ -175,7 +156,6 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
         ],
         affiliateUrlPattern: createAffiliatePattern('/offer/'), 
         skippedPaths: [
-            // These pages are known to stall the browser (you should manually add them here)
             '/rotiri-gratuite/', 
             '/bonus-fara-depunere/',
         ],
@@ -185,9 +165,9 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
     beturi: {
         startPaths: ['/'],
         ctaSelector: 'a.affiliate-meta-link[data-casino]',
-        includePatterns: [], excludePatterns: [], 
-        // ➡️ CHANGED: maxPages set to 100
-        maxPages: 100, 
+        includePatterns: UNIVERSAL_CRAWL_PATTERNS,
+        excludePatterns: [], 
+        maxPages: 100,
         highTrafficPaths: [
             '/', '/ponturi-pariuri/', '/ponturi-pariuri/fotbal/', '/biletul-zilei/',
             '/cota-2/', '/meciuri-azi/', '/echipa-cfr-cluj/', '/case-pariuri-oferte/',
