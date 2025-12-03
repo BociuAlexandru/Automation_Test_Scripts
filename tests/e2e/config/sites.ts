@@ -63,19 +63,20 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
         excludePatterns: [
             /^\/wp-admin\/?/, /^\/wp-json\/?/, /^\/tag\/.*/, /^\/author\/.*/, /^\/feed\/?/,
         ],
-        maxPages: 200,
+        // ➡️ CHANGED: maxPages set to 100
+        maxPages: 100,
         highTrafficPaths: [
-            '/', '/bonus-fara-depunere-2025/', //'/rotiri-gratuite-fara-depunere-2025/',
-            // '/new-subscribers-email/', '/gads-lp-rotiri-gratuite-fara-depunere-pmax/',
-            // '/cazinouri-noi-licentiate/', '/gads-lp-bonus-cu-depunere-2025/',
-            // '/cazinouri-online-rotiri-gratuite/', '/bonus-casino/', '/m-oferte-fara-depunere-premium/',
-            // '/bonus-casino-sm/', '/g-oferte-fara-depunere-premium/', '/casino-online/',
-            // '/oferte-cu-depunere-premium-g/', '/top-cazinouri-2025-eml/',
-            // '/gads-lp-rotiri-gratuite-fara-depunere-ex/', '/m-oferte-cu-depunere-premium/',
-            // '/cazinouri-noi-licentiate-sm/', '/lp-multi-offer/', '/cele-mai-noi-cazinouri/',
-            // '/blog/reguli-kings/', '/bonus-fara-rulaj/',
+            '/', '/bonus-fara-depunere-2025/', '/rotiri-gratuite-fara-depunere-2025/',
+            '/new-subscribers-email/', '/gads-lp-rotiri-gratuite-fara-depunere-pmax/',
+            '/cazinouri-noi-licentiate/', '/gads-lp-bonus-cu-depunere-2025/',
+            '/cazinouri-online-rotiri-gratuite/', '/bonus-casino/', '/m-oferte-fara-depunere-premium/',
+            '/bonus-casino-sm/', '/g-oferte-fara-depunere-premium/', '/casino-online/',
+            '/oferte-cu-depunere-premium-g/', '/top-cazinouri-2025-eml/',
+            '/gads-lp-rotiri-gratuite-fara-depunere-ex/', '/m-oferte-cu-depunere-premium/',
+            '/cazinouri-noi-licentiate-sm/', '/lp-multi-offer/', '/cele-mai-noi-cazinouri/',
+            '/blog/reguli-kings/', '/bonus-fara-rulaj/',
         ],
-        affiliateUrlPattern: createAffiliatePattern('/goaffcas/'), // ⬅️ CORRECTED CALL (1 arg)
+        affiliateUrlPattern: createAffiliatePattern('/goaffcas/'), 
         skippedPaths: [], 
     },
 
@@ -90,27 +91,28 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
         excludePatterns: [
             /^\/wp-admin\/?/, /^\/wp-json\/?/, /^\/tag\/.*/, /^\/author\/.*/, /^\/feed\/?/,
         ],
-        maxPages: 200,
+        // ➡️ CHANGED: maxPages set to 100
+        maxPages: 100,
         highTrafficPaths: [
-            '/', '/jocuri/pacanele-clasice/', //'/jocuri-cu-pacanele/shinning-crown-pacanele-online/',
-            // '/jocuri-pacanele/', '/bonusuri-fara-depunere-pm/', '/jocuri-cu-pacanele/pacanele-7777-40-super-hot/',
-            // '/jocuri-cu-pacanele/pacanele-online-sizzling-hot-deluxe/', '/jocuri-cu-pacanele/burning-hot-pacanele-cu-fructe/',
-            // '/producatori-jocuri/egt-gratis/', '/bonus-de-casino/', '/jocuri-cu-pacanele/joc-pacanele-dice-roll/',
-            // '/jocuri-cu-pacanele/40-burning-hot-gratis/', '/rotiri-gratuite/', '/jocuri-cu-pacanele/20-dazzling-hot-gratis/',
-            // '/jocuri-cu-pacanele/pacanele-gratis-dazzling-hot/', '/jocuri-cu-pacanele/jocuri-cu-pacanele-20-super-hot/',
-            // '/jocuri-cu-pacanele/pacanele-cu-77777-fruit-cocktail/', '/jocuri-cu-pacanele/20-burning-hot-gratis/',
-            // '/jocuri-cu-pacanele/100-super-hot-gratis/', '/jocuri/pacanele-fructe/',
-            // '/jocuri-cu-pacanele/100-burning-hot-gratis/', '/bonus-fara-depunere-mr-play/',
-            // '/bonus-fara-depunere-swiper/', '/jocuri-cu-pacanele/40-super-hot-bell-link-gratis/',
-            // '/jocuri-cu-pacanele/pacanele-ca-la-aparate-lucky-lady-charm-deluxe/', '/jocuri-cu-pacanele/pacanele-ca-la-aparate-crazy-monkey/',
-            // '/jocuri-cu-pacanele/american-poker-2-gratis/', '/jocuri-cu-pacanele/extra-stars-gratis/',
-            // '/jocuri-cu-pacanele/supreme-hot-gratis/', '/bonus-fara-depunere-ultrabet/',
-            // '/swiper-bonus-de-bun-venit/', '/jocuri-cu-pacanele/5-dazzling-hot-bell-link-gratis/',
-            // '/jocuri/pacanele-coroane/', '/jocuri/ruleta-online/',
-            // '/jocuri-cu-pacanele/20-super-hot-bell-link-gratis/', '/jocuri-cu-pacanele/40-burning-hot-6-reels-gratis/',
-            // '/jocuri-cu-pacanele/versailles-gold-egt-gratis/', '/888-casino-bonus-fara-depunere/',
+            '/', '/jocuri/pacanele-clasice/', '/jocuri-cu-pacanele/shinning-crown-pacanele-online/',
+            '/jocuri-pacanele/', '/bonusuri-fara-depunere-pm/', '/jocuri-cu-pacanele/pacanele-7777-40-super-hot/',
+            '/jocuri-cu-pacanele/pacanele-online-sizzling-hot-deluxe/', '/jocuri-cu-pacanele/burning-hot-pacanele-cu-fructe/',
+            '/producatori-jocuri/egt-gratis/', '/bonus-de-casino/', '/jocuri-cu-pacanele/joc-pacanele-dice-roll/',
+            '/jocuri-cu-pacanele/40-burning-hot-gratis/', '/rotiri-gratuite/', '/jocuri-cu-pacanele/20-dazzling-hot-gratis/',
+            '/jocuri-cu-pacanele/pacanele-gratis-dazzling-hot/', '/jocuri-cu-pacanele/jocuri-cu-pacanele-20-super-hot/',
+            '/jocuri-cu-pacanele/pacanele-cu-77777-fruit-cocktail/', '/jocuri-cu-pacanele/20-burning-hot-gratis/',
+            '/jocuri-cu-pacanele/100-super-hot-gratis/', '/jocuri/pacanele-fructe/',
+            '/jocuri-cu-pacanele/100-burning-hot-gratis/', '/bonus-fara-depunere-mr-play/',
+            '/bonus-fara-depunere-swiper/', '/jocuri-cu-pacanele/40-super-hot-bell-link-gratis/',
+            '/jocuri-cu-pacanele/pacanele-ca-la-aparate-lucky-lady-charm-deluxe/', '/jocuri-cu-pacanele/pacanele-ca-la-aparate-crazy-monkey/',
+            '/jocuri-cu-pacanele/american-poker-2-gratis/', '/jocuri-cu-pacanele/extra-stars-gratis/',
+            '/jocuri-cu-pacanele/supreme-hot-gratis/', '/bonus-fara-depunere-ultrabet/',
+            '/swiper-bonus-de-bun-venit/', '/jocuri-cu-pacanele/5-dazzling-hot-bell-link-gratis/',
+            '/jocuri/pacanele-coroane/', '/jocuri/ruleta-online/',
+            '/jocuri-cu-pacanele/20-super-hot-bell-link-gratis/', '/jocuri-cu-pacanele/40-burning-hot-6-reels-gratis/',
+            '/jocuri-cu-pacanele/versailles-gold-egt-gratis/', '/888-casino-bonus-fara-depunere/',
         ],
-        affiliateUrlPattern: createAffiliatePattern('/goaffcas/'), // ⬅️ CORRECTED CALL (1 arg)
+        affiliateUrlPattern: createAffiliatePattern('/goaffcas/'), 
         skippedPaths: [],
     },
 
@@ -126,13 +128,14 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
             /^\/wp-admin\/?/, /^\/wp-json\/?/, /^\/tag\/.*/, 
             /^\/author\/.*/, /^\/feed\/?/,
         ],
-        maxPages: 200,
+        // ➡️ CHANGED: maxPages set to 100
+        maxPages: 100,
         highTrafficPaths: [
-            '/', '/cazinouri-online-cu-bonus-fara-depunere/', //'/casino/betano/',
-            // '/casino/bet7/', '/casino/hot-spins/', '/casino/frank-casino/',
-            // '/casino-online-romania/',
+            '/', '/cazinouri-online-cu-bonus-fara-depunere/', '/casino/betano/',
+            '/casino/bet7/', '/casino/hot-spins/', '/casino/frank-casino/',
+            '/casino-online-romania/',
         ],
-        affiliateUrlPattern: createAffiliatePattern('/aff/so-'), // ⬅️ CORRECTED CALL (1 arg)
+        affiliateUrlPattern: createAffiliatePattern('/aff/so-'), 
         skippedPaths: [],
     },
 
@@ -140,13 +143,15 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
     jocsloturi: {
         startPaths: ['/'], 
         ctaSelector: 'a.affiliate-meta-link[data-casino]',
-        includePatterns: [], excludePatterns: [], maxPages: 5, 
+        includePatterns: [], excludePatterns: [], 
+        // ➡️ CHANGED: maxPages set to 100
+        maxPages: 100, 
         highTrafficPaths: [
-            '/', '/bonus-fara-depunere-sloturi/', //'/blog/cum-se-joaca-barbut/',
-            // '/sloturi-casino-online/', '/blog/depunere-minima-10-lei/', '/jocuri/sloturi-777/',
-            // '/info-casino/bonus-fara-depunere-magic-jackpot/', '/rotiri-gratuite/',
+            '/', '/bonus-fara-depunere-sloturi/', '/blog/cum-se-joaca-barbut/',
+            '/sloturi-casino-online/', '/blog/depunere-minima-10-lei/', '/jocuri/sloturi-777/',
+            '/info-casino/bonus-fara-depunere-magic-jackpot/', '/rotiri-gratuite/',
         ],
-        affiliateUrlPattern: createAffiliatePattern('/aff/'), // ⬅️ CORRECTED CALL (1 arg)
+        affiliateUrlPattern: createAffiliatePattern('/aff/'), 
         skippedPaths: [],
     },
 
@@ -154,23 +159,25 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
     'casino.com.ro': {
         startPaths: ['/'],
         ctaSelector: 'a.affiliate-meta-link[data-casino]',
-        includePatterns: [], excludePatterns: [], maxPages: 5, 
+        includePatterns: [], excludePatterns: [], 
+        // ➡️ CHANGED: maxPages set to 100
+        maxPages: 100, 
         highTrafficPaths: [
-            '/', '/jocuri/pacanele-gratis/', //'/new-no-deposit/', '/bonusuri-fara-depunere-online-2025/',
-            // '/rotiri-fara-depunere-online-2025/', '/bonusuri-fara-depunere-pmax/', '/bonus-fara-depunere/',
-            // '/bonus-bun-venit-online-2025/', '/cazinouri-noi-licentiate/', '/sm-bonus-fara-depunere-casino-online/',
-            // '/m-oferte-cu-depunere-premium/', '/bonus-fara-rulaj/', '/g-oferte-fara-depunere-premium/',
-            // '/slot/shining-crown/', '/m-oferte-fara-depunere-premium/', '/cazinou/king-casino/',
-            // '/diverse/cazinouri-cu-mize-mici/', '/rotiri-gratuite/', '/ghid/bonus-elite-slots/',
-            // '/jocuri/pacanele-cu-speciale/', '/sloturi/', '/slot/sizzling-hot-deluxe/',
-            // '/bonus-de-bun-venit/', '/cazinou/prima-casino/', '/slot/40-shining-crown-bell-link-demo/',
-            // '/cazinou/12xbet/', '/bonus-casino-standard/rotiri-gratuite-million/',
+            '/', '/jocuri/pacanele-gratis/', '/new-no-deposit/', '/bonusuri-fara-depunere-online-2025/',
+            '/rotiri-fara-depunere-online-2025/', '/bonusuri-fara-depunere-pmax/', '/bonus-fara-depunere/',
+            '/bonus-bun-venit-online-2025/', '/cazinouri-noi-licentiate/', '/sm-bonus-fara-depunere-casino-online/',
+            '/m-oferte-cu-depunere-premium/', '/bonus-fara-rulaj/', '/g-oferte-fara-depunere-premium/',
+            '/slot/shining-crown/', '/m-oferte-fara-depunere-premium/', '/cazinou/king-casino/',
+            '/diverse/cazinouri-cu-mize-mici/', '/rotiri-gratuite/', '/ghid/bonus-elite-slots/',
+            '/jocuri/pacanele-cu-speciale/', '/sloturi/', '/slot/sizzling-hot-deluxe/',
+            '/bonus-de-bun-venit/', '/cazinou/prima-casino/', '/slot/40-shining-crown-bell-link-demo/',
+            '/cazinou/12xbet/', '/bonus-casino-standard/rotiri-gratuite-million/',
         ],
-        affiliateUrlPattern: createAffiliatePattern('/offer/'), // ⬅️ CORRECTED CALL (1 arg)
+        affiliateUrlPattern: createAffiliatePattern('/offer/'), 
         skippedPaths: [
             // These pages are known to stall the browser (you should manually add them here)
-             '/rotiri-gratuite/', 
-             '/bonus-fara-depunere/',
+            '/rotiri-gratuite/', 
+            '/bonus-fara-depunere/',
         ],
     },
 
@@ -178,17 +185,19 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
     beturi: {
         startPaths: ['/'],
         ctaSelector: 'a.affiliate-meta-link[data-casino]',
-        includePatterns: [], excludePatterns: [], maxPages: 5, 
+        includePatterns: [], excludePatterns: [], 
+        // ➡️ CHANGED: maxPages set to 100
+        maxPages: 100, 
         highTrafficPaths: [
-            '/', '/ponturi-pariuri/', //'/ponturi-pariuri/fotbal/', '/biletul-zilei/',
-            // '/cota-2/', '/meciuri-azi/', '/echipa-cfr-cluj/', '/case-pariuri-oferte/',
-            // '/bonus-fara-depunere-cazino/', '/case-pariuri-oferte/betano-bonus-fara-depunere/',
-            // '/rotiri-gratuite-fara-depunere/', '/pariuri-online/', '/oferte-cazino/88-rotiri-gratuite-888/',
-            // '/oferte-cazino/winner-bonus-fara-depunere/', '/free-bet/', '/ghid-casino/king-casino-contact/',
-            // '/ghid-casino/inregistrare-swiper/', '/oferte-cazino/500-rotiri-gratuite-netbet/',
-            // '/oferte-cazino/888-casino-bonus-fara-depunere/',
+            '/', '/ponturi-pariuri/', '/ponturi-pariuri/fotbal/', '/biletul-zilei/',
+            '/cota-2/', '/meciuri-azi/', '/echipa-cfr-cluj/', '/case-pariuri-oferte/',
+            '/bonus-fara-depunere-cazino/', '/case-pariuri-oferte/betano-bonus-fara-depunere/',
+            '/rotiri-gratuite-fara-depunere/', '/pariuri-online/', '/oferte-cazino/88-rotiri-gratuite-888/',
+            '/oferte-cazino/winner-bonus-fara-depunere/', '/free-bet/', '/ghid-casino/king-casino-contact/',
+            '/ghid-casino/inregistrare-swiper/', '/oferte-cazino/500-rotiri-gratuite-netbet/',
+            '/oferte-cazino/888-casino-bonus-fara-depunere/',
         ],
-        affiliateUrlPattern: createAffiliatePattern('/aff/'), // ⬅️ CORRECTED CALL (1 arg)
+        affiliateUrlPattern: createAffiliatePattern('/aff/'), 
         skippedPaths: [],
     },
 } as const;
