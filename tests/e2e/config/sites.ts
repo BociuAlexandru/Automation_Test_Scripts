@@ -18,7 +18,8 @@ export type SiteConfig = {
     /** ➡️ NEW: Regex pattern that identifies any affiliate link on this domain */
     affiliateUrlPattern: RegExp;
     /** ➡️ FIX: Define skipped paths for unstable pages */
-    skippedPaths?: string[]; 
+    skippedPaths?: string[];
+  
 };
 
 // --- DEFINITIVE PATTERN CONSTANTS ---
@@ -71,7 +72,8 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
             '/blog/reguli-kings/', '/bonus-fara-rulaj/',
         ],
         affiliateUrlPattern: createAffiliatePattern('/goaffcas/'), 
-        skippedPaths: [], 
+        skippedPaths: [],
+        
     },
 
     // --- 2. JOCPACANELE.RO ---
@@ -102,6 +104,7 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
         ],
         affiliateUrlPattern: createAffiliatePattern('/goaffcas/'), 
         skippedPaths: [],
+    
     },
 
     // --- 3. JOCURICAZINOURI.COM ---
@@ -118,6 +121,7 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
         ],
         affiliateUrlPattern: createAffiliatePattern('/aff/so-'), 
         skippedPaths: [],
+        
     },
 
     // --- 4. JOCSLOTURI.RO ---
@@ -134,6 +138,7 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
         ],
         affiliateUrlPattern: createAffiliatePattern('/aff/'), 
         skippedPaths: [],
+        
     },
 
     // --- 5. CASINO.COM.RO ---
@@ -155,10 +160,9 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
             '/cazinou/12xbet/', '/bonus-casino-standard/rotiri-gratuite-million/',
         ],
         affiliateUrlPattern: createAffiliatePattern('/offer/'), 
-        skippedPaths: [
-            '/rotiri-gratuite/', 
-            '/bonus-fara-depunere/',
-        ],
+        skippedPaths: [],
+        
+
     },
 
     // --- 6. BETURI.RO ---
@@ -179,6 +183,7 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
         ],
         affiliateUrlPattern: createAffiliatePattern('/aff/'), 
         skippedPaths: [],
+        
     },
 } as const;
 
