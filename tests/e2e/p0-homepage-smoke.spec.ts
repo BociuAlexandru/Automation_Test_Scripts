@@ -1,4 +1,4 @@
-// tests/e2e/p0-homepage-smoke.spec.ts (V65 - Enhanced Terminal Logging)
+// tests/e2e/p0-homepage-smoke.spec.ts (V73 - Final CCR Logo Selector)
 
 // 💥 CRITICAL IMPORTS
 import { test, expect, TestInfo, Page } from '@playwright/test'; 
@@ -19,18 +19,17 @@ const CSV_FAILURE_FILE = path.join(BASE_REPORT_DIR, 'homepage_smoke_failures.csv
 const CSV_HEADER = 'Project,Test ID,Failure Type,Details,Failing URL\n';
 
 // --- CORE UTILITY FUNCTIONS ---
-// 🎯 NEW UTILITY: Function to strip diacritics (accents/cedillas) for case-insensitive, character-insensitive comparison
+// Function to strip diacritics (accents/cedillas) for case-insensitive, character-insensitive comparison
 function stripDiacritics(text: string): string {
-    // Uses NFKD normalization and removes non-spacing marks (which include diacritics)
     return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
-// 🎯 NEW UTILITY: Check if H1 contains at least one word from the source text
+// Check if H1 contains at least one word from the source text
 function checkH1Content(sourceText: string, h1Text: string): boolean {
     const normalizedSource = stripDiacritics(sourceText).toLowerCase();
     const normalizedH1 = stripDiacritics(h1Text).toLowerCase();
 
-    // 🎯 FIX: Tokenize the source by space, allowing numbers and symbols to be preserved as tokens.
+    // Tokenize the source by space, allowing numbers and symbols to be preserved as tokens.
     const sourceTokens = normalizedSource
         .split(/\s+/) 
         .filter(token => {
@@ -87,13 +86,24 @@ type MenuMapItem = {
 
 // --- UNIVERSAL MENU MAPS (Click-Triggered Sites) ---
 
+const CCR_MENU_MAP: MenuMapItem[] = [
+    { name: 'Bonusuri Fără Depunere', paths: ['/bonus-fara-depunere/', '/rotiri-gratuite/', '/bonus-pariuri-fara-depunere/'], mainPath: '/bonusuri-fara-depunere-online-2025/' },
+    { name: 'Bonusuri', paths: ['/calendar-craciun-bonusuri-casino/', '/bonus-de-bun-venit/', '/bonus-casino/', '/pacanele-online-cu-cardul/', '/bonus-fara-rulaj/', '/bonus-de-ziua-ta/', '/roata-norocului-casino/', '/bonusuri-pariuri-sportive/'], mainPath: '/bonus-de-bun-venit/' },
+    { name: 'Recenzii', paths: ['/cazinouri/', '/cazinou/prima-casino/', '/cazinou/superbet/', '/cazinou/player-casino/', '/cazinou/netbet/', '/cazinou/winboss/', '/cazinou/mr-bit/', '/cazinou/totogaming/', '/cazinou/conticazino/', '/cazinou/pokerstars/', '/cazinou/casa-pariurilor/', '/cazinou/fortuna/', '/cazinou/pacanele-ro/', '/cazinou/winbet/', '/cazinou/betano/', '/cazinou/don-casino/', '/cazinou/12xbet/', '/cazinou/maxwin/', '/cazinou/777-casino/', '/cazinou/king-casino/'], mainPath: '/cazinouri/' },
+    { name: 'Sloturi Gratis', paths: ['/sloturi/', '/jocuri/pacanele-gratis/', '/jocuri/pacanele-fructe/', '/jocuri/pacanele-cu-trifoi/', '/jocuri/pacanele-cu-speciale/', '/jocuri/pacanele-dublaje/', '/jocuri/sloturi-cu-rtp-mare/', '/jocuri/pacanele-megaways/', '/jocuri/pacanele-jackpot/', '/jocuri/pacanele-cu-coroane/', '/jocuri/bell-link-demo/', '/jocuri/clover-chance/', '/jocuri/egypt-quest/', '/jocuri/ruleta-online-gratis/', '/jocuri/blackjack-online-gratis/'], mainPath: '/sloturi/' },
+    { name: 'Producători', paths: ['/producatori-sloturi-online/', '/producatori-sloturi/amusnet/', '/producatori-sloturi/pragmatic-play/', '/producatori-sloturi/novomatic/', '/producatori-sloturi/netent/', '/producatori-sloturi/isoftbet/', '/producatori-sloturi/relax-gaming/', '/producatori-sloturi/hacksaw-gaming/', '/producatori-sloturi/playngo/', '/producatori-sloturi/skywind/'], mainPath: '/producatori-sloturi-online/' },
+    { name: 'Noutăți', paths: ['/blog/', '/bonus-casino-standard/prima-casino-bonus-fara-depunere/', '/bonus-casino-exclusiv/superbet-bonus-fara-depunere/', '/ghid/cod-bonus-player-casino/', '/bonus-casino-exclusiv/netbet-rotiri-gratuite/', '/bonus-casino-exclusiv/rotiri-gratuite-winboss/', '/ghid/mr-bit-bonus-fara-depunere/', '/bonus-casino-standard/bonusuri-totogaming/', '/ghid/conti-cazino-bonus-fara-depunere/', '/bonus-casino-standard/bonus-casa-pariurilor/', '/bonus-casino-exclusiv/bonus-fara-depunere-fortuna/', '/bonus-casino-standard/bonus-pacanele-casino/', '/bonus-casino-standard/winbet-100-rotiri-gratuite-fara-depozit/', '/bonus-casino-exclusiv/bonus-fara-depunere-betano/', '/ghid/bonusuri-don-casino/', '/bonus-casino-standard/bonus-12xbet/', '/bonus-casino-standard/rotiri-gratuite-million/', '/bonus-casino-standard/bonus-32rosu/'], mainPath: '/blog/' },
+    { name: 'Poker', paths: ['/poker-online/', '/poker/freeroll-poker/', '/poker/', '/poker/cum-sa-castigi-la-poker/', '/poker/poker-omaha-hi-lo/', '/poker/seven-card-stud/', '/poker/razz-poker/', '/poker/short-deck-poker/', '/poker/omaha-poker/', '/poker/2-7-triple-draw-poker/'], mainPath: '/poker-online/' },
+];
+
 const BT_MENU_MAP: MenuMapItem[] = [
     { name: 'Ponturi Pariuri', paths: ['/ponturi-pariuri/', '/ponturi-pariuri/fotbal/', '/ponturi-pariuri/tenis/', '/ponturi-pariuri/baschet/', '/ponturi-pariuri/handbal/', '/ponturi-pariuri/hochei/', '/ponturi-pariuri/ufc/', '/ponturi-pariuri/formula-1/', '/ponturi-pariuri/motogp/', '/ponturi-pariuri/volei/', '/ponturi-pariuri/futsal/'], mainPath: '/ponturi-pariuri/' },
 ];
 
 const SITE_TO_MENU_MAP: Record<SiteName, MenuMapItem[]> = {
     'beturi': BT_MENU_MAP,
-    'casino.com.ro': [], 'jocpacanele': [], 'jocsloturi': [], 'supercazino': [], 'jocuricazinouri': [],
+    'casino.com.ro': CCR_MENU_MAP,
+    'jocpacanele': [], 'jocsloturi': [], 'supercazino': [], 'jocuricazinouri': [],
 };
 
 // Global soft failure accumulator (must be tracked outside of test functions)
@@ -107,13 +117,16 @@ test('H1: Homepage Load Performance - Initial Load and Key Elements Visibility',
     const siteName = getSiteNameFromProject(projectName);
     const config = siteConfigs[siteName];
     
-    // 1. CSV Initialization (Only run for the first project in the config)
-    if (projectName === 'beturi') { // Adjusted to run once for the target project
+    // 1. CSV Initialization (Run once for the first project in the test config)
+    if (projectName === 'casino.com.ro' || projectName === 'beturi') { // Ensures initialization happens
         if (!fs.existsSync(BASE_REPORT_DIR)) {
             fs.mkdirSync(BASE_REPORT_DIR, { recursive: true });
         }
-        fs.writeFileSync(CSV_FAILURE_FILE, CSV_HEADER, { encoding: 'utf8' });
-        console.log(`[CSV] Initialized ${CSV_FAILURE_FILE}`);
+        // Only re-write the header if it's the very first project, otherwise append
+        if (projectName === 'casino.com.ro') { 
+             fs.writeFileSync(CSV_FAILURE_FILE, CSV_HEADER, { encoding: 'utf8' });
+             console.log(`[CSV] Initialized ${CSV_FAILURE_FILE}`);
+        }
         // Reset soft failure accumulator at the start of the entire test run
         softFailuresAcc = []; 
     }
@@ -197,11 +210,26 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
         }
     });
     
-    // --- Step 2: Iterate through each top menu item (BETURI ONLY) ---
-    if (siteName === 'beturi') {
+    // --- Step 2: Iterate through each top menu item ---
+    if (siteName === 'beturi' || siteName === 'casino.com.ro') {
+        
+        let parentSelector: string;
+        let isProjectDropdownOnly: boolean;
+
+        // 🎯 LOGIC: Choose the Parent Selector based on the project
+        if (siteName === 'beturi') {
+            parentSelector = '#menu-main-menu > li';
+            isProjectDropdownOnly = false; // Beturi uses mixed direct/dropdown links
+        } else if (siteName === 'casino.com.ro') {
+            // 🎯 NEW CCR SELECTOR
+            parentSelector = '.header-desktop-menu > ul > li'; // Using the suggested stable selector
+            isProjectDropdownOnly = true; // All top items are dropdown triggers
+        } else {
+            return;
+        }
         
         // 1. Find all parent list items using the generalized selector
-        const parentListItems = page.locator('#menu-main-menu > li');
+        const parentListItems = page.locator(parentSelector);
         const itemCount = await parentListItems.count();
 
         for (let i = 0; i < itemCount; i++) {
@@ -214,7 +242,9 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
 
             // 🎯 CHECK: Guaranteed detection of menu item type
             const listItemClass = await listItem.getAttribute('class') || '';
-            const isDropdown = listItemClass.includes('menu-item-has-children');
+            
+            // Determine if it's a dropdown: If CCR, it's always true. If Beturi, check the class.
+            const isDropdown = isProjectDropdownOnly || listItemClass.includes('menu-item-has-children');
             
             // Check for the dropdown class
             const parentUrl = await parentLink.getAttribute('href') || '/';
@@ -246,7 +276,7 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
                         console.log(`[${projectName}] DEBUG: Triggering dropdown: "${cleanItemText}"`);
 
                         // Find all sub-links within this specific parent LI
-                        const subLinks = listItem.locator('ul.sub-menu a');
+                        const subLinks = listItem.locator('ul.sub-menu a, .submenu-panel a'); // Added CCR-specific submenu selector
                         const subLinkCount = await subLinks.count();
                         
                         for (let j = 0; j < subLinkCount; j++) {
@@ -278,12 +308,9 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
                                     const h1Locator = page.locator('h1').first();
                                     const h1Exists = await h1Locator.isVisible({ timeout: 3000 }).catch(() => false);
                                     let validationText = cleanSubText.length > 3 ? cleanSubText : cleanItemText; // Prefer sub-text
-                                    
-                                    // Initialize H1 text for logging
-                                    let h1Text = ''; 
 
                                     if (h1Exists) {
-                                        h1Text = (await h1Locator.textContent())?.trim() || '';
+                                        const h1Text = (await h1Locator.textContent())?.trim() || '';
                                         
                                         // 🎯 Assertion: Use the new flexible word inclusion check
                                         if (!checkH1Content(validationText, h1Text)) {
@@ -424,7 +451,7 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
             });
         } // End of parent menu loop
     } else {
-        console.warn(`[${siteName}] WARNING: H2 test logic not implemented or project is non-click type.`);
+        console.warn(`[${siteName}] WARNING: H2 test logic not implemented for ${siteName}.`);
     }
 
     
@@ -433,8 +460,17 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
         
         console.log(`[${siteName}] DEBUG: Testing logo click from: ${baseURL}`);
 
-        // 🎯 FIX: Using the highly specific selector
-        const logoSelector = '.custom-logo-link'; 
+        // 🎯 LOGIC: Choose the Logo Selector based on the project
+        let logoSelector: string;
+        if (siteName === 'beturi') {
+            logoSelector = '.custom-logo-link';
+        } else if (siteName === 'casino.com.ro') {
+            // 🎯 NEW CCR SELECTOR: Targeting the specific column and the anchor link
+            logoSelector = '.col-span-1 a[href="/"]'; 
+        } else {
+            logoSelector = 'a[href="/"]'; // Default fallback
+        }
+        
         const logoLink = page.locator(logoSelector).first();
         
         // 1. Navigation setup (to be on a non-homepage page)
