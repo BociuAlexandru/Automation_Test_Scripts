@@ -1,10 +1,10 @@
-// tests/e2e/p0-homepage-smoke.spec.ts (V73 - Final CCR Logo Selector)
+// tests/e2e/p0-homepage-smoke.spec.ts (V77 - Definitive CamelCase Splitting Fix)
 
 // 💥 CRITICAL IMPORTS
 import { test, expect, TestInfo, Page } from '@playwright/test'; 
-import { siteConfigs, SiteName } from './config/sites'; 
 import * as fs from "fs"; 
 import path from "path"; 
+import { siteConfigs, SiteName } from './config/sites'; 
 
 /**
  * Helper to get the siteName from the Playwright Project Name.
@@ -24,18 +24,35 @@ function stripDiacritics(text: string): string {
     return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
+// 🎯 NEW HELPER: Splits words based on case change and separates numbers/letters
+function splitCamelCaseAndNumbers(text: string): string[] {
+    // 1. Insert space where lowercase is followed by uppercase (e.g., LuckySeven -> Lucky Seven)
+    //    We must operate on the ORIGINAL CASE text for this step.
+    let cleanedText = text
+        .replace(/([a-z])([A-Z])/g, '$1 $2'); 
+    
+    // 2. Insert space where letter is followed by number (or vice versa)
+    cleanedText = cleanedText
+        .replace(/([a-z])([0-9])/g, '$1 $2')
+        .replace(/([0-9])([a-z])/g, '$1 $2');
+
+    // Remove non-word characters and split by space. Ensure results are lowercase for comparison.
+    return cleanedText.trim().toLowerCase().split(/\s+/).filter(Boolean); 
+}
+
 // Check if H1 contains at least one word from the source text
 function checkH1Content(sourceText: string, h1Text: string): boolean {
-    const normalizedSource = stripDiacritics(sourceText).toLowerCase();
+    // We normalize the H1 text (stripped of diacritics and lowercased) for searching
     const normalizedH1 = stripDiacritics(h1Text).toLowerCase();
 
-    // Tokenize the source by space, allowing numbers and symbols to be preserved as tokens.
-    const sourceTokens = normalizedSource
-        .split(/\s+/) 
+    // 🎯 FIX: Split the source text using the CamelCase helper on the original text, 
+    //         then strip diacritics from the resulting tokens for robust matching.
+    const sourceTokens = splitCamelCaseAndNumbers(sourceText)
+        .map(token => stripDiacritics(token)) // Strip diacritics from split tokens (e.g., Păcănele)
         .filter(token => {
             // Check 1: Must be at least 2 characters long.
             if (token.length < 2) return false;
-            // Check 2: Must contain at least one letter or number (e.g., '888', 'pacanele.ro')
+            // Check 2: Must contain at least one letter or number (e.g., '888', 'lucky')
             return /[a-z0-9]/.test(token);
         });
 
@@ -86,24 +103,14 @@ type MenuMapItem = {
 
 // --- UNIVERSAL MENU MAPS (Click-Triggered Sites) ---
 
-const CCR_MENU_MAP: MenuMapItem[] = [
-    { name: 'Bonusuri Fără Depunere', paths: ['/bonus-fara-depunere/', '/rotiri-gratuite/', '/bonus-pariuri-fara-depunere/'], mainPath: '/bonusuri-fara-depunere-online-2025/' },
-    { name: 'Bonusuri', paths: ['/calendar-craciun-bonusuri-casino/', '/bonus-de-bun-venit/', '/bonus-casino/', '/pacanele-online-cu-cardul/', '/bonus-fara-rulaj/', '/bonus-de-ziua-ta/', '/roata-norocului-casino/', '/bonusuri-pariuri-sportive/'], mainPath: '/bonus-de-bun-venit/' },
-    { name: 'Recenzii', paths: ['/cazinouri/', '/cazinou/prima-casino/', '/cazinou/superbet/', '/cazinou/player-casino/', '/cazinou/netbet/', '/cazinou/winboss/', '/cazinou/mr-bit/', '/cazinou/totogaming/', '/cazinou/conticazino/', '/cazinou/pokerstars/', '/cazinou/casa-pariurilor/', '/cazinou/fortuna/', '/cazinou/pacanele-ro/', '/cazinou/winbet/', '/cazinou/betano/', '/cazinou/don-casino/', '/cazinou/12xbet/', '/cazinou/maxwin/', '/cazinou/777-casino/', '/cazinou/king-casino/'], mainPath: '/cazinouri/' },
-    { name: 'Sloturi Gratis', paths: ['/sloturi/', '/jocuri/pacanele-gratis/', '/jocuri/pacanele-fructe/', '/jocuri/pacanele-cu-trifoi/', '/jocuri/pacanele-cu-speciale/', '/jocuri/pacanele-dublaje/', '/jocuri/sloturi-cu-rtp-mare/', '/jocuri/pacanele-megaways/', '/jocuri/pacanele-jackpot/', '/jocuri/pacanele-cu-coroane/', '/jocuri/bell-link-demo/', '/jocuri/clover-chance/', '/jocuri/egypt-quest/', '/jocuri/ruleta-online-gratis/', '/jocuri/blackjack-online-gratis/'], mainPath: '/sloturi/' },
-    { name: 'Producători', paths: ['/producatori-sloturi-online/', '/producatori-sloturi/amusnet/', '/producatori-sloturi/pragmatic-play/', '/producatori-sloturi/novomatic/', '/producatori-sloturi/netent/', '/producatori-sloturi/isoftbet/', '/producatori-sloturi/relax-gaming/', '/producatori-sloturi/hacksaw-gaming/', '/producatori-sloturi/playngo/', '/producatori-sloturi/skywind/'], mainPath: '/producatori-sloturi-online/' },
-    { name: 'Noutăți', paths: ['/blog/', '/bonus-casino-standard/prima-casino-bonus-fara-depunere/', '/bonus-casino-exclusiv/superbet-bonus-fara-depunere/', '/ghid/cod-bonus-player-casino/', '/bonus-casino-exclusiv/netbet-rotiri-gratuite/', '/bonus-casino-exclusiv/rotiri-gratuite-winboss/', '/ghid/mr-bit-bonus-fara-depunere/', '/bonus-casino-standard/bonusuri-totogaming/', '/ghid/conti-cazino-bonus-fara-depunere/', '/bonus-casino-standard/bonus-casa-pariurilor/', '/bonus-casino-exclusiv/bonus-fara-depunere-fortuna/', '/bonus-casino-standard/bonus-pacanele-casino/', '/bonus-casino-standard/winbet-100-rotiri-gratuite-fara-depozit/', '/bonus-casino-exclusiv/bonus-fara-depunere-betano/', '/ghid/bonusuri-don-casino/', '/bonus-casino-standard/bonus-12xbet/', '/bonus-casino-standard/rotiri-gratuite-million/', '/bonus-casino-standard/bonus-32rosu/'], mainPath: '/blog/' },
-    { name: 'Poker', paths: ['/poker-online/', '/poker/freeroll-poker/', '/poker/', '/poker/cum-sa-castigi-la-poker/', '/poker/poker-omaha-hi-lo/', '/poker/seven-card-stud/', '/poker/razz-poker/', '/poker/short-deck-poker/', '/poker/omaha-poker/', '/poker/2-7-triple-draw-poker/'], mainPath: '/poker-online/' },
-];
-
-const BT_MENU_MAP: MenuMapItem[] = [
-    { name: 'Ponturi Pariuri', paths: ['/ponturi-pariuri/', '/ponturi-pariuri/fotbal/', '/ponturi-pariuri/tenis/', '/ponturi-pariuri/baschet/', '/ponturi-pariuri/handbal/', '/ponturi-pariuri/hochei/', '/ponturi-pariuri/ufc/', '/ponturi-pariuri/formula-1/', '/ponturi-pariuri/motogp/', '/ponturi-pariuri/volei/', '/ponturi-pariuri/futsal/'], mainPath: '/ponturi-pariuri/' },
-];
-
+// NOTE: All static menu map arrays have been removed for simplicity.
 const SITE_TO_MENU_MAP: Record<SiteName, MenuMapItem[]> = {
-    'beturi': BT_MENU_MAP,
-    'casino.com.ro': CCR_MENU_MAP,
-    'jocpacanele': [], 'jocsloturi': [], 'supercazino': [], 'jocuricazinouri': [],
+    'beturi': [], 
+    'casino.com.ro': [], 
+    'jocpacanele': [], 
+    'jocsloturi': [], 
+    'supercazino': [], 
+    'jocuricazinouri': [],
 };
 
 // Global soft failure accumulator (must be tracked outside of test functions)
@@ -118,7 +125,7 @@ test('H1: Homepage Load Performance - Initial Load and Key Elements Visibility',
     const config = siteConfigs[siteName];
     
     // 1. CSV Initialization (Run once for the first project in the test config)
-    if (projectName === 'casino.com.ro' || projectName === 'beturi') { // Ensures initialization happens
+    if (projectName === 'casino.com.ro' || projectName === 'beturi' || projectName === 'jocpacanele') { // Ensures initialization happens
         if (!fs.existsSync(BASE_REPORT_DIR)) {
             fs.mkdirSync(BASE_REPORT_DIR, { recursive: true });
         }
@@ -210,20 +217,83 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
         }
     });
     
-    // --- Step 2: Iterate through each top menu item ---
-    if (siteName === 'beturi' || siteName === 'casino.com.ro') {
+    // --- Step 3: Verify Logo Click (MOVED TO FRONT) ---
+    await test.step('H2.4: Verify Logo Link Returns to Homepage', async () => {
+        
+        console.log(`[${siteName}] DEBUG: Testing logo click from: ${baseURL}`);
+
+        // 🎯 LOGIC: Choose the Logo Selector based on the project
+        let logoSelector: string;
+        if (siteName === 'beturi') {
+            logoSelector = '.custom-logo-link';
+        } else if (siteName === 'casino.com.ro') {
+            logoSelector = '.col-span-1 a[href="/"]'; 
+        } else if (siteName === 'jocpacanele') {
+            // 🎯 JP Selector: Using the explicitly working container selector
+            logoSelector = '.d-none.d-lg-block.logo-container > a'; 
+        } else {
+            logoSelector = 'a[href="/"]'; // Default fallback
+        }
+        
+        const logoLink = page.locator(logoSelector).first();
+        
+        // 1. Navigation setup (to be on a non-homepage page)
+        const awayUrl = baseURL + '/logo-test-target';
+        
+        try {
+            await page.goto(awayUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
+        } catch (e) {
+            logFailureToCsv(siteName, 'H2.4 - Pre-check Nav Fail', 'Crash Recovery Failure', `Failed to navigate away before logo test.`, awayUrl);
+            console.warn(`[${siteName}] WARNING: Failed pre-logo-click navigation setup. Skipping logo test.`);
+            softFailuresAcc.push(`[${projectName}] H2.4: Failed pre-logo-click setup.`);
+            return;
+        }
+
+        // 2. Check Link is Enabled/Visible & Click
+        try {
+            await expect(logoLink, `Site logo link should be enabled.`).toBeEnabled({ timeout: 5000 });
+            await logoLink.click();
+        } catch (e) {
+             logFailureToCsv(siteName, 'H2.4 - Logo Click Fail', 'Logo Click Fail', `Logo locator failure or click failure.`, awayUrl);
+             softFailuresAcc.push(`[${projectName}] H2.4: Logo element/click failed.`);
+             console.error(`[${siteName}] ❌ FAILED: Logo element not found or click failed.`);
+             return;
+        }
+
+        // 3. Final URL Assertion
+        try {
+            await page.waitForURL(baseURL + '/', { waitUntil: 'load', timeout: 30000 });
+            expect(page.url(), `Clicking the logo should return to the root homepage ('/')`).toBe(baseURL + '/');
+            console.log(`[${siteName}] ✅ LOGO CHECK PASSED: Redirected to: ${baseURL}/`);
+
+        } catch (e) {
+            logFailureToCsv(siteName, 'H2.4 - Logo Click Fail', 'Logo Click Fail', `Logo click failed to redirect to ${baseURL}/.`, baseURL);
+            softFailuresAcc.push(`[${projectName}] H2.4: Logo redirect URL check failed.`);
+            console.error(`[${siteName}] ❌ FAILED: Logo redirect failed.`);
+        }
+    });
+
+
+    // --- Step 2: Iterate through each top menu item (OLD H2.2) ---
+    await test.step('H2.2: Main Menu Link Validation', async () => {
         
         let parentSelector: string;
+        let subMenuSelector: string;
         let isProjectDropdownOnly: boolean;
 
         // 🎯 LOGIC: Choose the Parent Selector based on the project
         if (siteName === 'beturi') {
             parentSelector = '#menu-main-menu > li';
             isProjectDropdownOnly = false; // Beturi uses mixed direct/dropdown links
+            subMenuSelector = 'ul.sub-menu a';
         } else if (siteName === 'casino.com.ro') {
-            // 🎯 NEW CCR SELECTOR
-            parentSelector = '.header-desktop-menu > ul > li'; // Using the suggested stable selector
+            parentSelector = '.header-desktop-menu > ul > li';
             isProjectDropdownOnly = true; // All top items are dropdown triggers
+            subMenuSelector = 'ul.sub-menu a, .submenu-panel a';
+        } else if (siteName === 'jocpacanele') {
+            parentSelector = '.inner-navbar-collapse > ul > li'; 
+            isProjectDropdownOnly = true; // All top items are dropdown triggers
+            subMenuSelector = '.dropdown-menu a';
         } else {
             return;
         }
@@ -243,8 +313,8 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
             // 🎯 CHECK: Guaranteed detection of menu item type
             const listItemClass = await listItem.getAttribute('class') || '';
             
-            // Determine if it's a dropdown: If CCR, it's always true. If Beturi, check the class.
-            const isDropdown = isProjectDropdownOnly || listItemClass.includes('menu-item-has-children');
+            // Determine if it's a dropdown: If the project forces it, OR it has the class.
+            const isDropdown = isProjectDropdownOnly || listItemClass.includes('menu-item-has-children') || listItemClass.includes('dropdown');
             
             // Check for the dropdown class
             const parentUrl = await parentLink.getAttribute('href') || '/';
@@ -276,7 +346,7 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
                         console.log(`[${projectName}] DEBUG: Triggering dropdown: "${cleanItemText}"`);
 
                         // Find all sub-links within this specific parent LI
-                        const subLinks = listItem.locator('ul.sub-menu a, .submenu-panel a'); // Added CCR-specific submenu selector
+                        const subLinks = listItem.locator(subMenuSelector); // Use project-specific selector
                         const subLinkCount = await subLinks.count();
                         
                         for (let j = 0; j < subLinkCount; j++) {
@@ -340,7 +410,7 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
                                     await page.goto(baseURL, { waitUntil: 'load', timeout: 10000 });
                                     
                                 } catch (error) {
-                                    // Log fatal failure (503/Timeout/Crash) and attempt recovery
+                                    // Log fatal failure (503/Timeout/Crash)
                                     const errorDetails = error instanceof Error ? error.message.split('\n')[0] : 'Unknown error.';
                                     logFailureToCsv(siteName, `H2.2 - Sublink Redirect`, 'Nav/Status/Crash Fail', errorDetails, targetUrl);
                                     
@@ -450,65 +520,10 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
                 }
             });
         } // End of parent menu loop
-    } else {
-        console.warn(`[${siteName}] WARNING: H2 test logic not implemented for ${siteName}.`);
-    }
+    }); // End of H2.2 Step (The Menu Loop)
 
     
-    // --- Step 3: Verify Logo Click ---
-    await test.step('H2.4: Verify Logo Link Returns to Homepage', async () => {
-        
-        console.log(`[${siteName}] DEBUG: Testing logo click from: ${baseURL}`);
-
-        // 🎯 LOGIC: Choose the Logo Selector based on the project
-        let logoSelector: string;
-        if (siteName === 'beturi') {
-            logoSelector = '.custom-logo-link';
-        } else if (siteName === 'casino.com.ro') {
-            // 🎯 NEW CCR SELECTOR: Targeting the specific column and the anchor link
-            logoSelector = '.col-span-1 a[href="/"]'; 
-        } else {
-            logoSelector = 'a[href="/"]'; // Default fallback
-        }
-        
-        const logoLink = page.locator(logoSelector).first();
-        
-        // 1. Navigation setup (to be on a non-homepage page)
-        const awayUrl = baseURL + '/logo-test-target';
-        
-        try {
-            await page.goto(awayUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
-        } catch (e) {
-            logFailureToCsv(siteName, 'H2.4 - Pre-check Nav Fail', 'Crash Recovery Failure', `Failed to navigate away before logo test.`, awayUrl);
-            console.warn(`[${siteName}] WARNING: Failed pre-logo-click navigation setup. Skipping logo test.`);
-            softFailuresAcc.push(`[${projectName}] H2.4: Failed pre-logo-click setup.`);
-            return;
-        }
-
-        // 2. Check Link is Enabled/Visible & Click
-        try {
-            await expect(logoLink, `Site logo link should be enabled.`).toBeEnabled({ timeout: 5000 });
-            await logoLink.click();
-        } catch (e) {
-             logFailureToCsv(siteName, 'H2.4 - Logo Click Fail', 'Logo Click Fail', `Logo locator failure or click failure.`, awayUrl);
-             softFailuresAcc.push(`[${projectName}] H2.4: Logo element/click failed.`);
-             console.error(`[${siteName}] ❌ FAILED: Logo element not found or click failed.`);
-             return;
-        }
-
-        // 3. Final URL Assertion
-        try {
-            await page.waitForURL(baseURL + '/', { waitUntil: 'load', timeout: 30000 });
-            expect(page.url(), `Clicking the logo should return to the root homepage ('/')`).toBe(baseURL + '/');
-            console.log(`[${siteName}] ✅ LOGO CHECK PASSED: Redirected to: ${baseURL}/`);
-
-        } catch (e) {
-            logFailureToCsv(siteName, 'H2.4 - Logo URL Fail', 'URL Mismatch', `Logo click failed to redirect to ${baseURL}/.`, baseURL);
-            softFailuresAcc.push(`[${projectName}] H2.4: Logo redirect URL check failed.`);
-            console.error(`[${siteName}] ❌ FAILED: Logo redirect failed.`);
-        }
-    });
-
+    // --- Step 4: Final Assertion ---
     testInfo.annotations.push({ type: 'Test ID', description: 'H2' });
     
     // 🎯 FINAL ASSERTION: Check global soft failure accumulator
