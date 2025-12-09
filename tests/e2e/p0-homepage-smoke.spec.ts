@@ -1,4 +1,4 @@
-// tests/e2e/p0-homepage-smoke.spec.ts (V77 - Definitive CamelCase Splitting Fix)
+// tests/e2e/p0-homepage-smoke.spec.ts (V78 - Jocsloturi Implemented)
 
 // 💥 CRITICAL IMPORTS
 import { test, expect, TestInfo, Page } from '@playwright/test'; 
@@ -27,7 +27,6 @@ function stripDiacritics(text: string): string {
 // 🎯 NEW HELPER: Splits words based on case change and separates numbers/letters
 function splitCamelCaseAndNumbers(text: string): string[] {
     // 1. Insert space where lowercase is followed by uppercase (e.g., LuckySeven -> Lucky Seven)
-    //    We must operate on the ORIGINAL CASE text for this step.
     let cleanedText = text
         .replace(/([a-z])([A-Z])/g, '$1 $2'); 
     
@@ -42,11 +41,9 @@ function splitCamelCaseAndNumbers(text: string): string[] {
 
 // Check if H1 contains at least one word from the source text
 function checkH1Content(sourceText: string, h1Text: string): boolean {
-    // We normalize the H1 text (stripped of diacritics and lowercased) for searching
     const normalizedH1 = stripDiacritics(h1Text).toLowerCase();
 
-    // 🎯 FIX: Split the source text using the CamelCase helper on the original text, 
-    //         then strip diacritics from the resulting tokens for robust matching.
+    // Use the robust splitting helper on the original source text
     const sourceTokens = splitCamelCaseAndNumbers(sourceText)
         .map(token => stripDiacritics(token)) // Strip diacritics from split tokens (e.g., Păcănele)
         .filter(token => {
@@ -108,7 +105,7 @@ const SITE_TO_MENU_MAP: Record<SiteName, MenuMapItem[]> = {
     'beturi': [], 
     'casino.com.ro': [], 
     'jocpacanele': [], 
-    'jocsloturi': [], 
+    'jocsloturi': [], // Added JS to map
     'supercazino': [], 
     'jocuricazinouri': [],
 };
@@ -125,7 +122,7 @@ test('H1: Homepage Load Performance - Initial Load and Key Elements Visibility',
     const config = siteConfigs[siteName];
     
     // 1. CSV Initialization (Run once for the first project in the test config)
-    if (projectName === 'casino.com.ro' || projectName === 'beturi' || projectName === 'jocpacanele') { // Ensures initialization happens
+    if (projectName === 'casino.com.ro' || projectName === 'beturi' || projectName === 'jocpacanele' || projectName === 'jocsloturi') { // Ensures initialization happens
         if (!fs.existsSync(BASE_REPORT_DIR)) {
             fs.mkdirSync(BASE_REPORT_DIR, { recursive: true });
         }
@@ -229,8 +226,10 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
         } else if (siteName === 'casino.com.ro') {
             logoSelector = '.col-span-1 a[href="/"]'; 
         } else if (siteName === 'jocpacanele') {
-            // 🎯 JP Selector: Using the explicitly working container selector
             logoSelector = '.d-none.d-lg-block.logo-container > a'; 
+        } else if (siteName === 'jocsloturi') {
+            // 🎯 JS Selector: Using the standard custom-logo-link (Astra theme)
+            logoSelector = '.custom-logo-link';
         } else {
             logoSelector = 'a[href="/"]'; // Default fallback
         }
@@ -294,6 +293,11 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
             parentSelector = '.inner-navbar-collapse > ul > li'; 
             isProjectDropdownOnly = true; // All top items are dropdown triggers
             subMenuSelector = '.dropdown-menu a';
+        } else if (siteName === 'jocsloturi') {
+            // 🎯 JS Selectors
+            parentSelector = '#primary-menu > li';
+            isProjectDropdownOnly = false; // JS uses the theme's class for detection
+            subMenuSelector = '.sub-menu a';
         } else {
             return;
         }
