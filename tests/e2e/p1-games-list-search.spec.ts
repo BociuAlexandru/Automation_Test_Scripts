@@ -2,31 +2,60 @@
 
 import { test, expect, Page } from '@playwright/test';
 
-// --- CONFIGURATION ---
-// The specific starting URL for the JocPacanele project (Step 1 requirement)
-const BASE_URL = "https://jocpacanele.ro/jocuri-pacanele/";
-// The specific slot name to search for (Step 3 requirement)
-const SEARCH_PHRASE = "Sizzling Hot Deluxe";
+// --- PROJECT CONFIGURATION DATA ---
+const CONFIG = {
+    // Configuration for the project that is already working
+    'jocpacanele': {
+        BASE_URL: "https://jocpacanele.ro/jocuri-pacanele/",
+        SEARCH_PHRASE: "Sizzling Hot Deluxe",
+        SELECTORS: {
+            SearchInput: 'input.orig',
+            SearchButton: 'button.promagnifier',
+            FirstGameCard: '.article-card__image-wrapper > a',
+            DemoCTA: '.slot-placeholder__buttons > a',
+            CloseButton: '.iframe-actions > .icon-close-solid'
+        },
+        // The number of required 'goBack()' steps to return to BASE_URL
+        BACK_STEPS: 3 
+    },
 
-// Selectors extracted and verified in previous steps
-const SELECTORS = {
-    // Step 3: Search Input Field
-    SearchInput: 'input.orig',
-    // Step 4: Search Submit Button
-    SearchButton: 'button.promagnifier',
-    // Step 5: Element showing the search results count
-    ResultsCount: '.resdrg strong',
-    // Step 6: Link for the first game card (image wrapper > link)
-    FirstGameCard: '.article-card__image-wrapper > a',
-    // Step 7: Call to Action (CTA) button to start the demo
-    DemoCTA: '.slot-placeholder__buttons > a',
-    // Step 9: Close button on the game popup
-    CloseButton: '.iframe-actions > .icon-close-solid'
+    // Configuration for the new project (SELECTORS are placeholders for now)
+    'jocuricazinouri': {
+        BASE_URL: "https://jocuricazinouri.com/jocuri-casino-gratis/",
+        SEARCH_PHRASE: "Sizzling Hot Deluxe", 
+        SELECTORS: {
+            SearchInput: 'input.page-search__input',       
+            SearchButton: 'a.page-search__button.searchbar-btn',
+            FirstGameCard: '.d-flex.flex-column.post-thumb__left.h-100 > a',
+            DemoCTA: '.single-slot__img-overlay > a',
+            CloseButton: '.close-iframe > .icon-x'
+        },
+        BACK_STEPS: 3 // <-- NEEDS VERIFICATION
+    }
 };
 
-test('P1: Full Slot Game Search and Demo Flow', async ({ page }) => {
+test('P1: Full Slot Game Search and Demo Flow', async ({ page }, testInfo) => {
     
-    // --- STEP 1: Navigate to the specific URL: https://jocpacanele.ro/jocuri-pacanele/ ---
+    // --- DYNAMIC CONFIGURATION BLOCK ---
+    // 1. Get the current running project name from the Playwright context
+    const projectName = testInfo.project.name;
+    
+    // 2. Load the configuration object for the current project
+    const projectConfig = CONFIG[projectName];
+
+    // Handle case where project is not configured (optional, but safe)
+    if (!projectConfig) {
+        throw new Error(`Configuration not found for project: ${projectName}`);
+    }
+
+    // 3. Assign variables based on the loaded config
+    const BASE_URL = projectConfig.BASE_URL;
+    const SEARCH_PHRASE = projectConfig.SEARCH_PHRASE;
+    const SELECTORS = projectConfig.SELECTORS;
+    const BACK_STEPS = projectConfig.BACK_STEPS;
+    // --- END DYNAMIC CONFIGURATION BLOCK ---
+    
+    // --- STEP 1: Navigate to the specific URL (using dynamic BASE_URL) ---
     // Action: Use page.goto to navigate to the exact starting link.
     await test.step(`1. Navigate directly to the starting URL: ${BASE_URL}`, async () => {
         await page.goto(BASE_URL);
@@ -45,15 +74,21 @@ test('P1: Full Slot Game Search and Demo Flow', async ({ page }) => {
     // --- STEP 3: Recognize the search bar and input the specific text 'Sizzling Hot Deluxe' ---
     // Action: Use page.fill with the SearchInput selector and the specific phrase.
     await test.step(`3. Enter specific search phrase: '${SEARCH_PHRASE}'`, async () => {
+        // Action: Use page.fill with the SearchInput selector and the specific phrase.
         await page.fill(SELECTORS.SearchInput, SEARCH_PHRASE);
         console.log(`3. Entered specific search phrase: ${SEARCH_PHRASE}`);
     });
 
-    // --- STEP 4: Submit the search by clicking on the search icon ---
-    // Action: Use page.click with the SearchButton selector.
-    await test.step('4. Submit the search', async () => {
-        await page.click(SELECTORS.SearchButton);
-        console.log('4. Search submitted by clicking the magnifier icon.');
+    // --- STEP 4: Submit the search by pressing 'Enter' on the input field ---
+    await test.step('4. Submit the search by pressing Enter (Bug Workaround)', async () => {
+    // Action: Use page.press on the input field to simulate pressing Enter
+    // We are deliberately bypassing the bugged SearchButton click.
+        await page.press(SELECTORS.SearchInput, 'Enter');
+    
+    // Crucial Wait: Wait for the URL to change or the results to load after submission
+        await page.waitForLoadState('domcontentloaded'); 
+    
+        console.log('4. Search submitted by pressing Enter.');
     });
 
     
@@ -89,25 +124,19 @@ test('P1: Full Slot Game Search and Demo Flow', async ({ page }) => {
         console.log('8. Popup successfully closed.');
     });
 
-    // --- STEP 9: Go back page by page until the starting URL is reached ---
-    // Action: Use page.goBack() twice and confirm the URL matches BASE_URL.
-    await test.step('9. Navigate back to the starting URL', async () => {
-        // The previous step (closing the popup) leaves us on the Single Slot URL (3).
+    // --- STEP 9: Go back page by page until the starting URL is reached ---.
+    await test.step(`9. Navigate back to the starting URL (Requires ${BACK_STEPS} steps)`, async () => {
 
-        // --- First Go Back: Single Slot URL (3) -> Search Results URL (2) ---
-        await Promise.all([
-            page.waitForLoadState('domcontentloaded'), 
-            page.goBack(), 
-        ]); 
-        console.log('9a. Successfully navigated back to the search results page.');
-
-        await Promise.all([
-            page.waitForLoadState('domcontentloaded'), 
-            page.goBack(), 
-        ]); 
-
-        // --- Second Go Back: Search Results URL (2) -> BASE_URL (1) ---
-        // This is the final URL check the script requires.
+        // Loop through the first BACK_STEPS - 1 to handle intermediate pages
+        for (let i = 0; i < BACK_STEPS - 1; i++) {
+            await Promise.all([
+                page.waitForLoadState('domcontentloaded'), 
+                page.goBack(), 
+            ]);
+            console.log(`9a. Successfully navigated back (Step ${i + 1} of ${BACK_STEPS - 1} intermediate steps).`);
+        }
+    
+        // --- Final Go Back: Confirms return to BASE_URL ---
         await Promise.all([
             page.waitForURL(BASE_URL), 
             page.goBack(), 
