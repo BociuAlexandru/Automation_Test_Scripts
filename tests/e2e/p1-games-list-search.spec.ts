@@ -30,7 +30,22 @@ const CONFIG = {
             DemoCTA: '.single-slot__img-overlay > a',
             CloseButton: '.close-iframe > .icon-x'
         },
-        BACK_STEPS: 3 // <-- NEEDS VERIFICATION
+        BACK_STEPS: 3
+
+    },
+
+    // --- Configuration for the new project: supercazino ---
+    'supercazino': {
+        BASE_URL: "https://www.supercazino.ro/sloturi-gratis/",
+        SEARCH_PHRASE: "Sizzling Hot Deluxe",
+        SELECTORS: {
+            SearchInput: 'input.orig',       
+            SearchButton: 'button#search-submit',   
+            FirstGameCard: '.card.border-0.article-card.relative > a',        
+            DemoCTA: 'a.iframeBtn',            
+            CloseButton: '.close-modal'
+        },
+        BACK_STEPS: 3
     }
 };
 
