@@ -1,6 +1,6 @@
 // tests/e2e/p0-crawl-audit.spec.ts
 
-import { test, devices, type Browser, type Page } from "@playwright/test";
+import { test, devices, type Browser, type Page, type Response } from "@playwright/test";
 import { siteConfigs, type SiteName } from "./config/sites";
 import { crawlSite } from "./config/crawler";
 import * as fs from "fs"; // ⬅️ Reintroducing file system module
@@ -213,7 +213,7 @@ async function runPageAudit(
                             return Promise.all([
                                 popup,
                                 // Wait for the first actual response on the new tab
-                                popup.waitForResponse((r) => r.url().startsWith("http"), { timeout: REDIRECT_TIMEOUT }),
+                                popup.waitForResponse((r: Response) => r.url().startsWith("http"), { timeout: REDIRECT_TIMEOUT }),
                             ]);
                         }).catch(async (error) => {
                             if (popup) { await popup.close().catch(() => {}); }

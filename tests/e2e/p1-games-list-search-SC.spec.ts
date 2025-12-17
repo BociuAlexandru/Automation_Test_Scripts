@@ -4,49 +4,20 @@ import { test, expect, Page } from '@playwright/test';
 
 // --- PROJECT CONFIGURATION DATA ---
 const CONFIG = {
-    // Configuration for the project that is already working
-    'jocpacanele': {
-        BASE_URL: "https://jocpacanele.ro/jocuri-pacanele/",
-        SEARCH_PHRASE: "Sizzling Hot Deluxe",
-        SELECTORS: {
-            SearchInput: 'input.orig',
-            SearchButton: 'button.promagnifier',
-            FirstGameCard: '.article-card__image-wrapper > a',
-            DemoCTA: '.slot-placeholder__buttons > a',
-            CloseButton: '.iframe-actions > .icon-close-solid'
-        },
-        // The number of required 'goBack()' steps to return to BASE_URL
-        BACK_STEPS: 3 
-    },
-
-    // Configuration for the new project (SELECTORS are placeholders for now)
-    'jocuricazinouri': {
-        BASE_URL: "https://jocuricazinouri.com/jocuri-casino-gratis/",
-        SEARCH_PHRASE: "Sizzling Hot Deluxe", 
-        SELECTORS: {
-            SearchInput: 'input.page-search__input',       
-            SearchButton: 'a.page-search__button.searchbar-btn',
-            FirstGameCard: '.d-flex.flex-column.post-thumb__left.h-100 > a',
-            DemoCTA: '.single-slot__img-overlay > a',
-            CloseButton: '.close-iframe > .icon-x'
-        },
-        BACK_STEPS: 3
-
-    },
-
     // --- Configuration for the new project: supercazino ---
-    'supercazino': {
-        BASE_URL: "https://www.supercazino.ro/sloturi-gratis/",
-        SEARCH_PHRASE: "Sizzling Hot Deluxe",
-        SELECTORS: {
-            SearchInput: 'input.orig',       
-            SearchButton: 'button#search-submit',   
-            FirstGameCard: '.card.border-0.article-card.relative > a',        
-            DemoCTA: 'a.iframeBtn',            
-            CloseButton: '.close-modal'
-        },
-        BACK_STEPS: 3
+            'supercazino': {
+                BASE_URL: "https://www.supercazino.ro/sloturi-gratis/",
+                SEARCH_PHRASE: "Sizzling Hot Deluxe",
+                SELECTORS: {
+                    SearchInput: 'input.orig',       
+                    SearchButton: 'button#search-submit',   
+                    FirstGameCard: '.card.border-0.article-card.relative > a',        
+                    DemoCTA: 'a.iframeBtn',            
+                    CloseButton: '.close-modal'
+                },
+                BACK_STEPS: 3 
     }
+
 };
 
 test('P1: Full Slot Game Search and Demo Flow', async ({ page }, testInfo) => {

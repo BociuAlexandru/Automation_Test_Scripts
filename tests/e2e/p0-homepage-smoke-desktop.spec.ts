@@ -1,4 +1,4 @@
-// tests/e2e/p0-homepage-smoke.spec.ts (V78 - Jocsloturi Implemented)
+// tests/e2e/p0-homepage-smoke-desktop.spec.ts (V79 - Jocsloturi Implemented)
 
 // 💥 CRITICAL IMPORTS
 import { test, expect, TestInfo, Page } from '@playwright/test'; 

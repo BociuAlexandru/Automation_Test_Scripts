@@ -1,5 +1,5 @@
-// tests/e2e/p0-high-traffic-audit.spec.ts
-import { test, devices } from "@playwright/test";
+// tests/e2e/p0-high-traffic-audit-desktop.spec.ts
+import { test, devices, type Response } from "@playwright/test";
 import { siteConfigs, type SiteName } from "./config/sites";
 import * as fs from "fs"; 
 
@@ -233,7 +233,7 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser, pag
                             popup = p; 
                             return Promise.all([
                                 popup,
-                                popup.waitForResponse((r) => r.url().startsWith("http"), { timeout: REDIRECT_TIMEOUT }),
+                                popup.waitForResponse((r: Response) => r.url().startsWith("http"), { timeout: REDIRECT_TIMEOUT }),
                             ]);
                         }).catch(async (error) => {
                             if (popup) { await popup.close().catch(() => {}); }
