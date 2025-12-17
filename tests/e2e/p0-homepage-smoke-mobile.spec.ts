@@ -1,11 +1,22 @@
 // tests/e2e/p0-homepage-smoke-mobile.spec.ts (V78 - Jocsloturi Implemented)
 
 // CRITICAL IMPORTS
-import { test, expect, TestInfo, Page, devices } from '@playwright/test'; 
+import { test, expect, TestInfo, devices, Locator } from '@playwright/test'; 
 import * as fs from "fs"; 
-import path from "path"; 
 import { siteConfigs, SiteName } from './config/sites'; 
-
+import {
+    BASE_REPORT_DIR,
+    CSV_FAILURE_FILE,
+    CSV_HEADER,
+    SITE_TO_MENU_MAP,
+    MOBILE_MENU_CONFIG,
+    closeCookiePopupIfPresent,
+    closeOptionalPopupIfPresent,
+    checkH1Content,
+    humanizePage,
+    buildAbsoluteUrl,
+    logFailureToCsv,
+} from './helpers/mobileMenuUtils';
 
 /**
  * Helper to get the siteName from the Playwright Project Name.
@@ -13,11 +24,6 @@ import { siteConfigs, SiteName } from './config/sites';
 const getSiteNameFromProject = (projectName: string): SiteName => {
     return projectName as SiteName;
 };
-
-// --- CSV CONFIGURATION ---
-const BASE_REPORT_DIR = path.join(process.cwd(), 'artifact-history');
-const CSV_FAILURE_FILE = path.join(BASE_REPORT_DIR, 'homepage_smoke_failures.csv');
-const CSV_HEADER = 'Project,Test ID,Failure Type,Details,Failing URL\n';
 
 // Force iPhone 13 mobile context for this spec
 const { defaultBrowserType: _ignored, ...iPhone13Descriptor } = devices["iPhone 13"];
@@ -29,192 +35,10 @@ test.use({
     ignoreHTTPSErrors: true,
 });
 
-// --- CORE UTILITY FUNCTIONS ---
-// Function to strip diacritics (accents/cedillas) for case-insensitive, character-insensitive comparison
-function stripDiacritics(text: string): string {
-    return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-}
-
-const COOKIE_DISMISS_SELECTORS: Partial<Record<SiteName, string[]>> = {
-    beturi: ['#CybotCookiebotDialogBodyButtonDecline'],
-    'casino.com.ro': ['#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll'],
-};
-
-const OPTIONAL_POPUP_SELECTORS: Partial<Record<SiteName, string[]>> = {
-    'casino.com.ro': ['.wof-close.wof-close-icon[role="button"]', '.wof-close.wof-close-icon'],
-    'jocsloturi': ['.popup-close', '.close-popup', '.new-popup-close'], // Added '.new-popup-close'
-};
-
-async function closeCookiePopupIfPresent(page: Page, siteName: SiteName): Promise<boolean> {
-    const selectors = COOKIE_DISMISS_SELECTORS[siteName];
-    if (!selectors || selectors.length === 0) {
-        return false;
-    }
-
-    for (const selector of selectors) {
-        try {
-            const dismissButton = page.locator(selector).first();
-            if (await dismissButton.isVisible({ timeout: 1000 })) {
-                await dismissButton.click({ timeout: 2000 });
-                await page.waitForTimeout(150);
-                console.log(`[${siteName}] INFO: Popup dismissed via selector "${selector}".`);
-                return true;
-            }
-        } catch (error) {
-            console.warn(`[${siteName}] WARN: Failed to auto-dismiss popup via selector "${selector}".`);
-        }
-    }
-
-    return false;
-}
-
-async function closeOptionalPopupIfPresent(page: Page, siteName: SiteName): Promise<boolean> {
-    const selectors = OPTIONAL_POPUP_SELECTORS[siteName];
-    if (!selectors || selectors.length === 0) {
-        return false;
-    }
-
-    for (const selector of selectors) {
-        try {
-            const popupClose = page.locator(selector).first();
-            if (await popupClose.isVisible({ timeout: 250 })) {
-                await popupClose.click({ timeout: 2000 });
-                await page.waitForTimeout(120);
-                console.log(`[${siteName}] INFO: Optional popup dismissed via selector "${selector}".`);
-                return true;
-            }
-        } catch {
-            // Popup didn’t appear; ignore.
-        }
-    }
-
-    return false;
-}
-
-// 🎯 NEW HELPER: Splits words based on case change and separates numbers/letters
-function splitCamelCaseAndNumbers(text: string): string[] {
-    // 1. Insert space where lowercase is followed by uppercase (e.g., LuckySeven -> Lucky Seven)
-    let cleanedText = text
-        .replace(/([a-z])([A-Z])/g, '$1 $2'); 
-    
-    // 2. Insert space where letter is followed by number (or vice versa)
-    cleanedText = cleanedText
-        .replace(/([a-z])([0-9])/g, '$1 $2')
-        .replace(/([0-9])([a-z])/g, '$1 $2');
-
-    // Remove non-word characters and split by space. Ensure results are lowercase for comparison.
-    return cleanedText.trim().toLowerCase().split(/\s+/).filter(Boolean); 
-}
-
-// Check if H1 contains at least one word from the source text
-function checkH1Content(sourceText: string, h1Text: string): boolean {
-    const normalizedH1 = stripDiacritics(h1Text).toLowerCase();
-
-    // Use the robust splitting helper on the original source text
-    const sourceTokens = splitCamelCaseAndNumbers(sourceText)
-        .map(token => stripDiacritics(token)) // Strip diacritics from split tokens (e.g., Păcănele)
-        .filter(token => {
-            // Check 1: Must be at least 2 characters long.
-            if (token.length < 2) return false;
-            // Check 2: Must contain at least one letter or number (e.g., '888', 'lucky')
-            return /[a-z0-9]/.test(token);
-        });
-
-    // Fallback: If there are no significant tokens, assume success.
-    if (sourceTokens.length === 0) return true;
-
-    // Check if any significant token is present in the normalized H1 text
-    const isMatch = sourceTokens.some(token => normalizedH1.includes(token));
-
-    return isMatch;
-}
-
-async function humanizePage(page: Page) {
-    // 1. Random Scroll (Simulate reading/browsing)
-    await page.evaluate(() => {
-        const heights = [200, 500, 800];
-        const randomHeight = heights[Math.floor(Math.random() * heights.length)];
-        window.scrollBy(0, randomHeight);
-    });
-    // 2. Small random pause (Simulate thought/processing)
-    await page.waitForTimeout(Math.random() * 500 + 500); // 500ms to 1000ms delay
-}
-
-function csvEscape(str: string | null | undefined): string {
-    if (str === null || str === undefined) return '""';
-    return `"${String(str).replace(/"/g, '""').replace(/(\r\n|\n|\r)/gm, ' ')}"`;
-}
-
-function buildAbsoluteUrl(baseURL: string, href: string | null | undefined): string {
-    if (!href) return '';
-    if (/^https?:\/\//i.test(href)) return href;
-    if (href.startsWith('//')) return `https:${href}`;
-    if (href.startsWith('/')) return `${baseURL.replace(/\/$/, '')}${href}`;
-    return href;
-}
-
-function logFailureToCsv(projectName: string, testId: string, type: string, details: string, url: string) {
-    const csvRow = `${csvEscape(projectName)},${csvEscape(testId)},${csvEscape(type)},${csvEscape(details)},${csvEscape(url)}`;
-    
-    // Ensure the directory exists before writing
-    if (!fs.existsSync(BASE_REPORT_DIR)) {
-        fs.mkdirSync(BASE_REPORT_DIR, { recursive: true });
-    }
-    
-    // Append the row to the file
-    fs.appendFileSync(CSV_FAILURE_FILE, csvRow + '\n', { encoding: 'utf8' });
-}
-
-// --- TYPE DEFINITION (Simplified for generic H1 test) ---
-type MenuMapItem = { 
-    name: string; 
-    paths: string[]; 
-    mainPath?: string; 
-};
-
-// --- UNIVERSAL MENU MAPS (Click-Triggered Sites) ---
-
-// NOTE: All static menu map arrays have been removed for simplicity.
-const SITE_TO_MENU_MAP: Record<SiteName, MenuMapItem[]> = {
-    'beturi': [], 
-    'casino.com.ro': [], 
-    'jocpacanele': [], 
-    'jocsloturi': [], // Added JS to map
-    'supercazino': [], 
-    'jocuricazinouri': [],
-};
-
-type MobileMenuConfig = {
-    burgerSelector?: string;
-    menuRootSelector?: string;
-    parentItemsSelector: string;
-    parentLinkSelector?: string;
-    subMenuLinkSelector: string;
-    subMenuLinkSelectorWithinContainer?: string;
-};
-
-const MOBILE_MENU_CONFIG: Partial<Record<SiteName, MobileMenuConfig>> = {
-    beturi: {
-        burgerSelector: 'span.mobile-menu-trigger',
-        menuRootSelector: 'div.mobile-menu-in',
-        parentItemsSelector: 'div.mobile-menu-in ul#menu-main-menu-1 .simplebar-content > li.menu-item',
-        parentLinkSelector: 'a',
-        subMenuLinkSelector: 'ul.sub-menu a',
-    },
-    'casino.com.ro': {
-        burgerSelector: 'div.menu_toggle a, .menu-toggle',
-        menuRootSelector: '.mobile_menu',
-        parentItemsSelector: '.mobile_menu_in .simplebar-content > ul > li.text-system-white',
-        parentLinkSelector: '.subToggle',
-        subMenuLinkSelector: '.sub_menu a',
-        subMenuLinkSelectorWithinContainer: 'a',
-    },
-    // TODO: Add configs for ccr, jp, js, sc, jc incrementally.
-};
+type SubLinkRecord = { text: string; href: string };
 
 // Global soft failure accumulator (must be tracked outside of test functions)
 let softFailuresAcc: string[] = [];
-
 
 // --- H1: Homepage Load Performance (ID: H1) ---
 test('H1: Homepage Load Performance - Initial Load and Key Elements Visibility', async ({ page }, testInfo: TestInfo) => { 
@@ -320,8 +144,12 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
             logoSelector = '.inline-block.max-w-\\[110px\\]';
         } else if (siteName === 'jocpacanele') {
 
-            logoSelector = '.d-none.d-lg-block.logo-container > a'; 
+            logoSelector = '.d-lg-none.logo-container .custom-logo-link, .logo-container .custom-logo-link'; 
 
+        } else if (siteName === 'supercazino') {
+            logoSelector = '#nav-mobile-sc-logo, a:has(#nav-mobile-sc-logo)';
+        } else if (siteName === 'jocuricazinouri') {
+            logoSelector = '.jcTopLogo .logo-wrapper';
         } else if (siteName === 'jocsloturi') {
             // JS Selector: Using the standard custom-logo-link (Astra theme)
             logoSelector = '.custom-logo-link';
@@ -371,10 +199,6 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
     // --- Step 2: Iterate through each top menu item (OLD H2.2) ---
     await test.step('H2.2: Main Menu Link Validation', async () => {
         
-        let parentSelector: string;
-        let subMenuSelector: string;
-        let isProjectDropdownOnly: boolean;
-
         const mobileMenuConfig = MOBILE_MENU_CONFIG[siteName];
 
         if (!mobileMenuConfig) {
@@ -389,6 +213,9 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
             parentLinkSelector = 'a',
             subMenuLinkSelector,
             subMenuLinkSelectorWithinContainer,
+            subToggleSelector,
+            useParentItemAsLink = false,
+            forceDropdownParents = false,
         } = mobileMenuConfig;
 
         const ensureMobileMenuOpen = async () => {
@@ -420,7 +247,14 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
             }
         };
 
-        let parentListItems = page.locator(parentItemsSelector);
+        let parentListItems: Locator = page.locator(parentItemsSelector);
+
+        const resolveParentLink = (item: Locator): Locator => {
+            if (useParentItemAsLink || !parentLinkSelector) {
+                return item;
+            }
+            return item.locator(parentLinkSelector).first();
+        };
 
         const waitForMenuItems = async () => {
             parentListItems = page.locator(parentItemsSelector);
@@ -454,19 +288,22 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
 
         for (let i = 0; i < itemCount; i++) {
             await prepareMenuState();
-            const listItem = page.locator(parentItemsSelector).nth(i);
-            const parentLink = listItem.locator(parentLinkSelector).first();
+            const listItem = parentListItems.nth(i);
+            await listItem.waitFor({ state: 'attached', timeout: 3000 }).catch(() => {});
+            const parentLink = resolveParentLink(listItem);
+            await parentLink.waitFor({ state: 'attached', timeout: 3000 }).catch(() => {});
             
             const rawItemText = await parentLink.textContent() || '';
             const cleanItemText = rawItemText.replace(/(\r\n|\n|\r|\s+)/gm, ' ').trim();
 
             // Guaranteed detection of menu item type
             const listItemClass = await listItem.getAttribute('class') || '';
-            const subMenuLocator = listItem.locator('.sub_menu');
+            const subMenuLocator = listItem.locator('.sub_menu, .sub-menu, ul.sub-menu');
             const hasExplicitSubMenu = await subMenuLocator.count() > 0;
             
             // Determine if it's a dropdown: If the project forces it, OR it has the class.
             const isDropdown =
+                forceDropdownParents ||
                 listItemClass.includes('menu-item-has-children') ||
                 listItemClass.includes('dropdown') ||
                 listItemClass.includes('has_children') ||
@@ -496,7 +333,9 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
                     if (isDropdown) { 
                         
                         // Rule 1: LI has .menu-item-has-children -> Treat as Dropdown Trigger Only.
-                        const subToggle = listItem.locator('.subToggle').first();
+                        const subToggle = (subToggleSelector
+                            ? listItem.locator(subToggleSelector).first()
+                            : listItem.locator('.subToggle').first());
                         const subMenuContainer = hasExplicitSubMenu ? subMenuLocator.first() : null;
 
                         const ensureSubMenuVisible = async () => {
@@ -504,9 +343,13 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
                                 return;
                             }
 
-                            try {
-                                await subToggle.click({ timeout: 3000 });
-                            } catch {
+                            if (subToggle && await subToggle.count()) {
+                                try {
+                                    await subToggle.click({ timeout: 3000 });
+                                } catch {
+                                    await parentLink.click({ timeout: 3000 }).catch(() => {});
+                                }
+                            } else {
                                 await parentLink.click({ timeout: 3000 }).catch(() => {});
                             }
 
