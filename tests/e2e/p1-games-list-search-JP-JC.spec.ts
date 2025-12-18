@@ -1,16 +1,32 @@
 // File Path: tests/e2e/p1-games-list-search.spec.ts
 
-import { test, expect, Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 
 // --- PROJECT CONFIGURATION DATA ---
-const CONFIG = {
+type ProjectConfig = {
+    BASE_URL: string;
+    SEARCH_PHRASE: string;
+    SELECTORS: {
+        SearchInput: string;
+        SearchButton: string;
+        FirstGameCard: string;
+        DemoCTA: string;
+        CloseButton: string;
+    };
+    BACK_STEPS: number;
+};
+
+type SupportedProject = 'jocpacanele' | 'jocuricazinouri';
+
+const CONFIG: Record<SupportedProject, ProjectConfig> = {
     // Configuration for the project that is already working
-    'jocpacanele': {
+    jocpacanele: {
         BASE_URL: "https://jocpacanele.ro/jocuri-pacanele/",
         SEARCH_PHRASE: "Sizzling Hot Deluxe",
         SELECTORS: {
             SearchInput: 'input.orig',
             SearchButton: 'button.promagnifier',
+
             FirstGameCard: '.article-card__image-wrapper > a',
             DemoCTA: '.slot-placeholder__buttons > a',
             CloseButton: '.iframe-actions > .icon-close-solid'
@@ -20,26 +36,34 @@ const CONFIG = {
     },
 
     // Configuration for the new project (SELECTORS are placeholders for now)
-    'jocuricazinouri': {
+    jocuricazinouri: {
         BASE_URL: "https://jocuricazinouri.com/jocuri-casino-gratis/",
         SEARCH_PHRASE: "Sizzling Hot Deluxe", 
         SELECTORS: {
-            SearchInput: 'input.page-search__input',       
+            SearchInput: 'input.page-search__input',       
             SearchButton: 'a.page-search__button.searchbar-btn',
+
             FirstGameCard: '.d-flex.flex-column.post-thumb__left.h-100 > a',
             DemoCTA: '.single-slot__img-overlay > a',
             CloseButton: '.close-iframe > .icon-x'
         },
         BACK_STEPS: 3 // <-- NEEDS VERIFICATION
     }
-};
+} as const;
+
+const isSupportedProject = (name: string): name is SupportedProject => name in CONFIG;
 
 test('P1: Full Slot Game Search and Demo Flow', async ({ page }, testInfo) => {
     
     // --- DYNAMIC CONFIGURATION BLOCK ---
     // 1. Get the current running project name from the Playwright context
     const projectName = testInfo.project.name;
-    
+
+    if (!isSupportedProject(projectName)) {
+        test.skip(true, `P1 Games List Search only runs for: ${Object.keys(CONFIG).join(', ')}`);
+        return;
+    }
+
     // 2. Load the configuration object for the current project
     const projectConfig = CONFIG[projectName];
 
