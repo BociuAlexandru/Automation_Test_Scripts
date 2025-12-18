@@ -86,7 +86,20 @@ test('H1: Homepage Load Performance - Initial Load and Key Elements Visibility',
     expect(loadTime, `[${siteName}] H1.2: Homepage should load in under ${maxLoadTime}ms. Actual: ${loadTime}ms.`).toBeLessThan(maxLoadTime);
     
     await test.step('H1.3a: Verify Main Header Visibility', async () => {
-        const header = page.locator('header, .header, #main-header-wrapper, #header, #site-header, #masthead, [data-elementor-type="header"], #page, .site, .mega-menu-desktop-container, .main-header-bar-wrap').first();
+        if (siteName === 'supercazino') {
+            const supercazinoMobileHeader = page.locator('#nav-mobile-sc-logo').first();
+            try {
+                await expect(supercazinoMobileHeader, 'Supercazino mobile header/logo container must be visible.').toBeVisible({ timeout: 10000 });
+                return;
+            } catch (e) {
+                logFailureToCsv(siteName, 'H1.3a', 'Element Visibility', 'Supercazino mobile header not visible.', baseURL);
+                throw e;
+            }
+        }
+
+        const header = page
+            .locator('header, .header, #main-header-wrapper, #header, #site-header, #masthead, [data-elementor-type="header"], #page, .site, .mega-menu-desktop-container, .main-header-bar-wrap')
+            .first();
         try {
             await expect(header, `Main site header element must be visible.`).toBeVisible({ timeout: 10000 });
         } catch (e) {
@@ -200,7 +213,6 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
     await test.step('H2.2: Main Menu Link Validation', async () => {
         
         const mobileMenuConfig = MOBILE_MENU_CONFIG[siteName];
-
         if (!mobileMenuConfig) {
             console.warn(`[${siteName}] Mobile menu config not implemented yet. Skipping H2.2 for this project.`);
             return;
@@ -216,7 +228,17 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
             subToggleSelector,
             useParentItemAsLink = false,
             forceDropdownParents = false,
+            subMenuPanelSelector,
+            parentDataAttribute,
+            panelDataAttribute,
+            backButtonSelector,
         } = mobileMenuConfig;
+
+        const isSupercazino = siteName === 'supercazino';
+        const usePanelNavigation =
+            isSupercazino &&
+            Boolean(subMenuPanelSelector && parentDataAttribute && panelDataAttribute);
+        const supercazinoNonDropdown = isSupercazino && !forceDropdownParents;
 
         const ensureMobileMenuOpen = async () => {
             await closeCookiePopupIfPresent(page, siteName);
@@ -224,13 +246,12 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
             if (!burgerSelector) return;
 
             const menuRoot = menuRootSelector ? page.locator(menuRootSelector) : null;
-            if (menuRoot && await menuRoot.isVisible()) {
+            if (menuRoot && await menuRoot.isVisible().catch(() => false)) {
                 return;
             }
 
             const burger = page.locator(burgerSelector).first();
             await expect(burger, 'Mobile burger trigger should be visible').toBeVisible({ timeout: 5000 });
-
             await burger.scrollIntoViewIfNeeded();
             await burger.click({ timeout: 5000, force: true });
             await closeOptionalPopupIfPresent(page, siteName);
@@ -238,7 +259,7 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
             if (menuRoot) {
                 const pollStart = Date.now();
                 while (Date.now() - pollStart < 5000) {
-                    if (await menuRoot.isVisible()) {
+                    if (await menuRoot.isVisible().catch(() => false)) {
                         return;
                     }
                     await page.waitForTimeout(150);
@@ -248,6 +269,17 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
         };
 
         let parentListItems: Locator = page.locator(parentItemsSelector);
+
+        const resetMenuHierarchy = async () => {
+            if (!backButtonSelector) return;
+            const backButton = page.locator(backButtonSelector).first();
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const visible = await backButton.isVisible({ timeout: 200 }).catch(() => false);
+                if (!visible) break;
+                await backButton.click({ timeout: 2000 }).catch(() => {});
+                await page.waitForTimeout(150);
+            }
+        };
 
         const resolveParentLink = (item: Locator): Locator => {
             if (useParentItemAsLink || !parentLinkSelector) {
@@ -261,7 +293,7 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
             try {
                 await parentListItems.first().waitFor({ state: 'attached', timeout: 5000 });
                 await parentListItems.first().waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
-            } catch (err) {
+            } catch {
                 console.warn(`[${siteName}] WARN: Menu items not ready yet; retrying burger open.`);
                 await ensureMobileMenuOpen();
                 parentListItems = page.locator(parentItemsSelector);
@@ -272,6 +304,7 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
 
         const prepareMenuState = async () => {
             await ensureMobileMenuOpen();
+            await resetMenuHierarchy();
             await waitForMenuItems();
         };
 
@@ -279,8 +312,6 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
 
         const itemCount = await parentListItems.count();
         console.log(`[${siteName}] DEBUG: Found ${itemCount} top-level mobile menu items.`);
-        
-
         if (itemCount === 0) {
             logFailureToCsv(siteName, 'H2.2 - Menu Structure', 'No mobile menu parent items found', parentItemsSelector, baseURL);
             throw new Error(`[${siteName}] H2.2 aborted: No mobile menu parent items found using selector "${parentItemsSelector}".`);
@@ -292,58 +323,64 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
             await listItem.waitFor({ state: 'attached', timeout: 3000 }).catch(() => {});
             const parentLink = resolveParentLink(listItem);
             await parentLink.waitFor({ state: 'attached', timeout: 3000 }).catch(() => {});
-            
+
             const rawItemText = await parentLink.textContent() || '';
             const cleanItemText = rawItemText.replace(/(\r\n|\n|\r|\s+)/gm, ' ').trim();
-
-            // Guaranteed detection of menu item type
             const listItemClass = await listItem.getAttribute('class') || '';
             const subMenuLocator = listItem.locator('.sub_menu, .sub-menu, ul.sub-menu');
             const hasExplicitSubMenu = await subMenuLocator.count() > 0;
-            
-            // Determine if it's a dropdown: If the project forces it, OR it has the class.
+
             const isDropdown =
-                forceDropdownParents ||
+                (forceDropdownParents && !(supercazinoNonDropdown && cleanItemText.trim().toLowerCase() === 'blog')) ||
                 listItemClass.includes('menu-item-has-children') ||
                 listItemClass.includes('dropdown') ||
                 listItemClass.includes('has_children') ||
                 hasExplicitSubMenu;
-            
-            // Check for the dropdown class
-            const parentUrl = await parentLink.getAttribute('href') || '/';
 
-            // Check if the item is empty or just a filler (e.g., empty LI tags)
+            const parentUrl = await parentLink.getAttribute('href') || '/';
             if (!cleanItemText || cleanItemText.length < 2) continue;
 
             await test.step(`H2.2: Testing Menu Item: [${cleanItemText}]`, async () => {
-                
-                // Note: We use a soft failure flag to track if anything failed inside this step.
                 let stepFailed = false;
-                
-                // Initialize variables used in the catch block 
-
                 let targetUrl = '';
                 let subMenuText = '';
 
                 try {
-                    // Check if the parent link is visible before interacting
                     await expect(parentLink, `Parent link "${cleanItemText}" must be visible.`).toBeVisible({ timeout: 5000 });
 
-                    // --- Dropdown Logic ---
-                    if (isDropdown) { 
-                        
-                        // Rule 1: LI has .menu-item-has-children -> Treat as Dropdown Trigger Only.
-                        const subToggle = (subToggleSelector
+                    if (isDropdown) {
+                        const parentDataValue =
+                            usePanelNavigation && parentDataAttribute
+                                ? await listItem.getAttribute(parentDataAttribute)
+                                : null;
+
+                        const resolvePanelLocator = (): Locator | null => {
+                            if (usePanelNavigation && subMenuPanelSelector && panelDataAttribute && parentDataValue) {
+                                return page.locator(`${subMenuPanelSelector}[${panelDataAttribute}="${parentDataValue}"]`);
+                            }
+                            return hasExplicitSubMenu ? subMenuLocator : null;
+                        };
+
+                        let subMenuLocatorRoot = resolvePanelLocator();
+                        const subToggle = subToggleSelector
                             ? listItem.locator(subToggleSelector).first()
-                            : listItem.locator('.subToggle').first());
-                        const subMenuContainer = hasExplicitSubMenu ? subMenuLocator.first() : null;
+                            : listItem.locator('.subToggle').first();
 
                         const ensureSubMenuVisible = async () => {
-                            if (subMenuContainer && await subMenuContainer.isVisible()) {
+                            const firstPanel = subMenuLocatorRoot?.first();
+                            if (firstPanel && await firstPanel.isVisible().catch(() => false)) {
                                 return;
                             }
 
-                            if (subToggle && await subToggle.count()) {
+                            if (usePanelNavigation) {
+                                await parentLink.click({ timeout: 3000 }).catch(() => {});
+                                if (firstPanel) {
+                                    await firstPanel.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {});
+                                }
+                                return;
+                            }
+
+                            if (await subToggle.count()) {
                                 try {
                                     await subToggle.click({ timeout: 3000 });
                                 } catch {
@@ -353,8 +390,8 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
                                 await parentLink.click({ timeout: 3000 }).catch(() => {});
                             }
 
-                            if (subMenuContainer) {
-                                await subMenuContainer.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {
+                            if (firstPanel) {
+                                await firstPanel.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {
                                     console.warn(`[${siteName}] WARN: Sub-menu for "${cleanItemText}" did not expand after toggle click.`);
                                 });
                             }
@@ -362,169 +399,131 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
 
                         await ensureSubMenuVisible();
 
-                        // Collect all sub-links data before navigation to avoid stale references after navigation resets.
-                        const subLinks = subMenuContainer
-                            ? subMenuContainer.locator(subMenuLinkSelectorWithinContainer ?? subMenuLinkSelector)
-                            : listItem.locator(subMenuLinkSelector); // Use project-specific selector
-                        const subLinkCount = await subLinks.count();
+                        if (!subMenuLocatorRoot) {
+                            subMenuLocatorRoot = listItem;
+                        }
+
                         const subLinkData: { text: string; href: string }[] = [];
-                        
-                        for (let j = 0; j < subLinkCount; j++) {
-                            const subLink = subLinks.nth(j);
-                            
-                            subMenuText = await subLink.textContent() || '';
-                            const subLinkHref = await subLink.getAttribute('href');
-                            
-                            // Clean sub-menu text (e.g., "Campionii Craciunului")
-                            const cleanSubText = subMenuText.replace(/(\r\n|\n|\r|\s+)/gm, ' ').trim();
-                            
-                            const absoluteSubHref = buildAbsoluteUrl(baseURL, subLinkHref);
+                        const containerCount = await subMenuLocatorRoot.count();
+                        const scopedSelector = subMenuLinkSelectorWithinContainer ?? subMenuLinkSelector;
 
-                            if (!cleanSubText || !absoluteSubHref || absoluteSubHref === baseURL + '#' || absoluteSubHref === '#') {
-                                console.warn(`[${siteName}] ⚠️ WARN: Skipping sub-link "${cleanSubText || '(no text)'}" due to empty or placeholder href.`);
-                                continue;
+                        for (let containerIdx = 0; containerIdx < containerCount; containerIdx++) {
+                            const container = subMenuLocatorRoot.nth(containerIdx);
+                            const subLinks = container.locator(scopedSelector);
+                            const subLinkCount = await subLinks.count();
+
+                            for (let j = 0; j < subLinkCount; j++) {
+                                const subLink = subLinks.nth(j);
+                                subMenuText = await subLink.textContent() || '';
+                                const subLinkHref = await subLink.getAttribute('href');
+                                const cleanSubText = subMenuText.replace(/(\r\n|\n|\r|\s+)/gm, ' ').trim();
+                                const absoluteSubHref = buildAbsoluteUrl(baseURL, subLinkHref);
+
+                                if (!cleanSubText || !absoluteSubHref || absoluteSubHref === baseURL + '#' || absoluteSubHref === '#') {
+                                    console.warn(`[${siteName}] ⚠️ WARN: Skipping sub-link "${cleanSubText || '(no text)'}" due to empty or placeholder href.`);
+                                    continue;
+                                }
+
+                                subLinkData.push({ text: cleanSubText, href: absoluteSubHref });
                             }
-
-                            subLinkData.push({ text: cleanSubText, href: absoluteSubHref });
                         }
 
                         for (const { text: cleanSubText, href } of subLinkData) {
-
                             await test.step(`Sublink Check: [${cleanItemText} / ${cleanSubText}]`, async () => {
                                 try {
-                                    // 1. Navigate using the actual HREF
                                     const navResponse = await page.goto(href, { waitUntil: 'load', timeout: 30000 });
-                                    
-                                    // 2. Status Code Check
                                     const navStatusCode = navResponse?.status() || 0;
                                     if (navStatusCode < 200 || navStatusCode >= 300) {
                                         throw new Error(`Non-2xx status code: ${navStatusCode} at URL: ${href}`);
                                     }
-                                    
-                                    // 3. H1 Validation (THE CORE NEW CHECK)
+
                                     const h1Locator = page.locator('h1').first();
                                     const h1Exists = await h1Locator.isVisible({ timeout: 3000 }).catch(() => false);
-                                    let validationText = cleanSubText.length > 3 ? cleanSubText : cleanItemText; // Prefer sub-text
+                                    const validationText = cleanSubText.length > 3 ? cleanSubText : cleanItemText;
 
                                     if (h1Exists) {
                                         const h1Text = (await h1Locator.textContent())?.trim() || '';
-                                        
-                                        // 🎯 Assertion: Use the new flexible word inclusion check
                                         if (!checkH1Content(validationText, h1Text)) {
-                                            // Soft failure: Log the assertion error but DO NOT throw
                                             const errorMsg = `H1 ("${h1Text}") does not contain significant words from menu text ("${validationText}").`;
                                             logFailureToCsv(siteName, `H2.2 - Sublink H1`, 'H1 Content Mismatch', errorMsg, href);
-                                            // 🎯 FIX: Include H1 in terminal output
                                             console.error(`[${siteName}] ❌ FAILED: Sub-link "${cleanSubText}" failed validation against H1: ${h1Text}`);
                                             stepFailed = true;
                                         } else {
-                                            // 🎯 FIX: Include H1 in terminal output
                                             console.log(`[${siteName}] ✅ PASSED: Sub-link "${cleanSubText}" validated against H1: ${h1Text}`);
                                         }
                                     } else {
-                                        // EDGE CASE: H1 is missing entirely
                                         const errorMsg = `No <h1> element found on page. Expected: ${validationText}.`;
                                         logFailureToCsv(siteName, `H2.2 - Sublink H1`, 'Missing H1 Element', errorMsg, href);
-                                        // 🎯 FIX: Include failure in terminal output
                                         console.error(`[${siteName}] ❌ FAILED: Sub-link "${cleanSubText}" failed H1 validation (Missing H1).`);
                                         stepFailed = true;
                                     }
 
-                                    // 4. Humanization
                                     await humanizePage(page);
-                                    
-                                    // 5. Go back to the homepage (Guaranteed return)
                                     await page.goto(baseURL, { waitUntil: 'load', timeout: 10000 });
                                     await prepareMenuState();
-                                    
                                 } catch (error) {
-                                    // Log fatal failure (503/Timeout/Crash)
                                     const errorDetails = error instanceof Error ? error.message.split('\n')[0] : 'Unknown error.';
                                     logFailureToCsv(siteName, `H2.2 - Sublink Redirect`, 'Nav/Status/Crash Fail', errorDetails, href);
-                                    
                                     console.error(`[${siteName}] ❌ FAILED: Sub-link "${cleanSubText}" failed. Error: ${errorDetails}`);
                                     stepFailed = true;
-                                    
-                                    // CRITICAL RECOVERY: Ensure return to homepage on failure to stabilize the browser
                                     try {
                                         await page.goto(baseURL, { waitUntil: 'load', timeout: 10000 });
                                         await prepareMenuState();
-                                    } catch (recoverError) {
+                                    } catch {
                                         console.warn(`[${siteName}] CRITICAL WARNING: Failed to reset page state after error. Resuming test loop...`);
                                     }
                                 }
                             });
-                        } // End of collected subLinks loop
-
-                    } else { 
-                        // --- Direct Link Logic (Rule 2) ---
+                        }
+                    } else {
                         const linkHref = await parentLink.getAttribute('href');
-                        
-                        // 🎯 FIX: Smart URL Construction
                         targetUrl = buildAbsoluteUrl(baseURL, linkHref);
-
 
                         await test.step(`Direct Link Check: [${cleanItemText}]`, async () => {
                             try {
-                                // 🎯 CHECK: If the link is just a placeholder (common for non-dropdowns that don't need linking)
-                                if (!targetUrl || targetUrl === '#' || targetUrl === baseURL + '#' || targetUrl === baseURL + '/') { 
+                                if (!targetUrl || targetUrl === '#' || targetUrl === baseURL + '#' || targetUrl === baseURL + '/') {
                                     console.warn(`[${siteName}] ⚠️ WARN: Direct link "${cleanItemText}" is a placeholder (#) or base link (/) and skipped H1 check.`);
                                     return;
                                 }
 
-                                const navResponse = await page.goto(targetUrl!, { waitUntil: 'load', timeout: 30000 });
-                                
-                                // Status Code Check
+                                const navResponse = await page.goto(targetUrl, { waitUntil: 'load', timeout: 30000 });
                                 const navStatusCode = navResponse?.status() || 0;
                                 if (navStatusCode < 200 || navStatusCode >= 300) {
                                     throw new Error(`Non-2xx status code: ${navStatusCode} at URL: ${targetUrl}`);
                                 }
 
-                                // H1 Validation (THE CORE NEW CHECK)
                                 const h1Locator = page.locator('h1').first();
                                 const h1Exists = await h1Locator.isVisible({ timeout: 3000 }).catch(() => false);
-                                
-                                // Initialize H1 text for logging
                                 let h1Text = '';
-                                
+
                                 if (h1Exists) {
                                     h1Text = (await h1Locator.textContent())?.trim() || '';
-                                    
-                                    // 🎯 Assertion: Use the new flexible word inclusion check
                                     if (!checkH1Content(cleanItemText, h1Text)) {
-                                        // Soft failure: Log the assertion error but DO NOT throw
                                         const errorMsg = `H1 ("${h1Text}") does not contain significant words from menu text ("${cleanItemText}").`;
-                                        logFailureToCsv(siteName, 'H2.2 - Direct Link H1', 'H1 Content Mismatch', errorMsg, targetUrl!);
-                                        // 🎯 FIX: Include H1 in terminal output
+                                        logFailureToCsv(siteName, 'H2.2 - Direct Link H1', 'H1 Content Mismatch', errorMsg, targetUrl);
                                         console.error(`[${siteName}] ❌ FAILED: Direct link "${cleanItemText}" failed validation against H1: ${h1Text}`);
                                         stepFailed = true;
                                     } else {
-                                        // 🎯 FIX: Include H1 in terminal output
                                         console.log(`[${siteName}] ✅ PASSED: Direct link "${cleanItemText}" validated against H1: ${h1Text}`);
                                     }
                                 } else {
-                                    // EDGE CASE: H1 is missing entirely
                                     const errorMsg = `No <h1> element found on page. Expected: ${cleanItemText}.`;
-                                    logFailureToCsv(siteName, 'H2.2 - Direct Link H1', 'Missing H1 Element', errorMsg, targetUrl!);
-                                    // 🎯 FIX: Include failure in terminal output
+                                    logFailureToCsv(siteName, 'H2.2 - Direct Link H1', 'Missing H1 Element', errorMsg, targetUrl);
                                     console.error(`[${siteName}] ❌ FAILED: Direct link "${cleanItemText}" failed H1 validation (Missing H1).`);
                                     stepFailed = true;
                                 }
-                                
+
                                 await humanizePage(page);
                                 await page.goto(baseURL, { waitUntil: 'load', timeout: 30000 });
                                 await prepareMenuState();
-                                
                             } catch (error) {
-                                // Log failure and attempt recovery (for 503/Timeout/Crash)
                                 const errorDetails = error instanceof Error ? error.message.split('\n')[0] : 'Unknown error.';
-                                logFailureToCsv(siteName, 'H2.2 - Direct Link Nav', 'Nav/Status/Crash Fail', errorDetails, targetUrl!);
+                                logFailureToCsv(siteName, 'H2.2 - Direct Link Nav', 'Nav/Status/Crash Fail', errorDetails, targetUrl);
                                 console.error(`[${siteName}] ❌ FAILED: Direct link "${cleanItemText}" failed. Error: ${errorDetails}`);
                                 stepFailed = true;
-                                
                                 try {
                                     await page.goto(baseURL, { waitUntil: 'load', timeout: 10000 });
-                                } catch (recoverError) {
+                                } catch {
                                     console.warn(`[${siteName}] CRITICAL WARNING: Failed to reset page state after error.`);
                                 } finally {
                                     await prepareMenuState();
@@ -532,33 +531,28 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
                             }
                         });
                     }
-                    
                 } catch (error) {
-                    // Catch initial parent visibility error or structural error
                     const errorDetails = error instanceof Error ? error.message.split('\n')[0] : 'Unknown structural error.';
                     logFailureToCsv(siteName, 'H2.2 - Parent Check', 'Structural Error', errorDetails, baseURL + parentUrl);
-                    
                     console.error(`[${siteName}] ❌ FAILED: Parent item "${cleanItemText}" failed structural test.`);
                     stepFailed = true;
-                    // Attempt to reset state before allowing Playwright to fail the step
-                    await page.goto(baseURL, { waitUntil: 'load', timeout: 10000 }).catch(recoverError => {
+                    await page.goto(baseURL, { waitUntil: 'load', timeout: 10000 }).catch(() => {
                         console.warn(`[${siteName}] CRITICAL WARNING: Failed to reset browser state after structural error.`);
                     });
                 }
 
-                // If any check failed within this parent item, record the soft failure status globally.
                 if (stepFailed) {
                     softFailuresAcc.push(`[${projectName}] H2.2: ${cleanItemText} failed one or more checks.`);
                 }
             });
-        } // End of parent menu loop
-    }); // End of H2.2 Step (The Menu Loop)
-
+        }
+    });
     
+
     // --- Step 4: Final Assertion ---
     testInfo.annotations.push({ type: 'Test ID', description: 'H2' });
     
-    // 🎯 FINAL ASSERTION: Check global soft failure accumulator
+    // FINAL ASSERTION: Check global soft failure accumulator
     if (softFailuresAcc.length > 0) {
         throw new Error(`H2 test completed with ${softFailuresAcc.length} soft failures. Check CSV for details.`);
     }

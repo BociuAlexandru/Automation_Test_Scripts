@@ -13,7 +13,10 @@ const COOKIE_DISMISS_SELECTORS: Partial<Record<SiteName, string[]>> = {
     jocsloturi: ['#CybotCookiebotDialogBodyButtonDecline'],
     jocpacanele: ['#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll'],
     jocuricazinouri: ['#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll'],
-    supercazino: ['#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll'],
+    supercazino: [
+        '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+        '#CybotCookiebotDialogBodyButtonDecline',
+    ],
 };
 
 const OPTIONAL_POPUP_SELECTORS: Partial<Record<SiteName, string[]>> = {
@@ -52,6 +55,10 @@ export type MobileMenuConfig = {
     subMenuLinkSelectorWithinContainer?: string;
     subToggleSelector?: string;
     forceDropdownParents?: boolean;
+    subMenuPanelSelector?: string;
+    parentDataAttribute?: string;
+    panelDataAttribute?: string;
+    backButtonSelector?: string;
 };
 
 export const MOBILE_MENU_CONFIG: Partial<Record<SiteName, MobileMenuConfig>> = {
@@ -73,11 +80,16 @@ export const MOBILE_MENU_CONFIG: Partial<Record<SiteName, MobileMenuConfig>> = {
     },
     supercazino: {
         burgerSelector: '#mega-menu-drawer-icon',
-        menuRootSelector: '.mega-menu-mobile-level-1-items',
+        menuRootSelector: '#mega-menu-mobile-open-container',
         parentItemsSelector: '.mega-menu-mobile-level-1-items .mega-menu-mobile-item[data-scroll-col]',
         useParentItemAsLink: true,
-        subMenuLinkSelector: 'a',
         forceDropdownParents: true,
+        subMenuLinkSelector: 'a[href]',
+        subMenuLinkSelectorWithinContainer: 'a[href]',
+        subMenuPanelSelector: '.mega-menu-list-mobile',
+        parentDataAttribute: 'data-scroll-col',
+        panelDataAttribute: 'data-scroll-for-col',
+        backButtonSelector: '#mega-menu-back-arrow-container',
     },
     jocuricazinouri: {
         burgerSelector: '.jtTopMenuToggleMobile',
