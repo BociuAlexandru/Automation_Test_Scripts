@@ -15,6 +15,8 @@ test.use({
 
 // --- CONFIGURATION TYPES ---------------------------------------------------
 // Each supported project provides its own selectors and search phrase.
+type DemoLaunchMode = 'popup' | 'new_tab';
+
 type ProjectConfig = {
     BASE_URL: string;
     SEARCH_PHRASE: string;
@@ -22,11 +24,14 @@ type ProjectConfig = {
         NewsletterClose: string;
         OfferClose: string;
         SearchInput: string;
+        SearchResultCard: string;
         FirstGameCard: string;
         DemoCTA: string;
-        CloseButton: string;
+        CloseButton?: string;
     };
     BACK_STEPS: number;
+    DEMO_MODE: DemoLaunchMode;
+    REQUIRE_POPUP_CLEAR?: boolean;
 };
 
 // --- GENERIC HELPERS -------------------------------------------------------
@@ -37,13 +42,8 @@ const closeOfferPopupIfPresent = async (page: Page, selector: string, timeout = 
         return false;
     }
 
-    try {
-        await closeButton.waitFor({ state: 'visible', timeout });
-    } catch {
-        return false;
-    }
-
-    if (!(await closeButton.isVisible().catch(() => false))) {
+    const isVisible = await closeButton.isVisible().catch(() => false);
+    if (!isVisible) {
         return false;
     }
 
@@ -52,7 +52,7 @@ const closeOfferPopupIfPresent = async (page: Page, selector: string, timeout = 
     return true;
 };
 
-type SupportedProject = 'jocpacanele';
+type SupportedProject = 'jocpacanele' | 'jocuricazinouri';
 
 // --- PROJECT CONFIG --------------------------------------------------------
 const CONFIG: Record<SupportedProject, ProjectConfig> = {
@@ -63,11 +63,28 @@ const CONFIG: Record<SupportedProject, ProjectConfig> = {
             NewsletterClose: '.wof-close.wof-close-icon',
             OfferClose: '.sticky-offer-close',
             SearchInput: 'form[role="search"] input.orig',
+            SearchResultCard: '#ajaxsearchliteres1 .article-card__image-wrapper > a',
             FirstGameCard: '.article-card__image-wrapper > a',
             DemoCTA: '.slot-placeholder__buttons > a',
             CloseButton: '.icon-close-solid',
         },
         BACK_STEPS: 5,
+        DEMO_MODE: 'popup',
+    },
+    jocuricazinouri: {
+        BASE_URL: 'https://jocuricazinouri.com/jocuri-casino-gratis/',
+        SEARCH_PHRASE: 'Sizzling Hot Deluxe',
+        SELECTORS: {
+            NewsletterClose: '.wof-close.wof-close-icon',
+            OfferClose: '.sticky-offer-close',
+            SearchInput: 'form#searchform input#s',
+            SearchResultCard: '.post-thumb__left > a',
+            FirstGameCard: '.post-thumb__left > a',
+            DemoCTA: 'a.button--internal.single-slot__play:not(.d-none)[data-slot-iframe-url]',
+        },
+        BACK_STEPS: 5,
+        DEMO_MODE: 'new_tab',
+        REQUIRE_POPUP_CLEAR: true,
     },
 };
 
@@ -157,13 +174,8 @@ const closeNewsletterIfPresent = async (page: Page, selector: string, timeout = 
         return false;
     }
 
-    try {
-        await closeButton.waitFor({ state: 'visible', timeout });
-    } catch {
-        return false;
-    }
-
-    if (!(await closeButton.isVisible().catch(() => false))) {
+    const isVisible = await closeButton.isVisible().catch(() => false);
+    if (!isVisible) {
         return false;
     }
 
@@ -178,13 +190,89 @@ const dismissInterferingPopups = async (page: Page, selectors: ProjectConfig['SE
     await closeOfferPopupIfPresent(page, selectors.OfferClose).catch(() => null);
 };
 
+const prepareLandingPage = async (page: Page, config: ProjectConfig) => {
+    await page.goto(config.BASE_URL, { waitUntil: 'domcontentloaded' });
+    const cookieHandled = (await clickCookieAllowAllIfPresent(page)) || (await acceptCookiesIfPresent(page));
+    if (!cookieHandled) {
+        await page.waitForTimeout(500);
+        await clickCookieAllowAllIfPresent(page);
+    }
+    // Fire-and-forget popup cleanup so we don't block the main flow.
+    void dismissInterferingPopups(page, config.SELECTORS);
+};
+
+const runSearchFlow = async (page: Page, config: ProjectConfig) => {
+    const { SELECTORS, SEARCH_PHRASE, REQUIRE_POPUP_CLEAR } = config;
+    if (REQUIRE_POPUP_CLEAR) {
+        await dismissInterferingPopups(page, SELECTORS);
+    } else {
+        void dismissInterferingPopups(page, SELECTORS);
+    }
+    const searchInput = page.locator(SELECTORS.SearchInput).first();
+    await searchInput.waitFor({ state: 'visible', timeout: 15000 });
+    await searchInput.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    await typeLikeHuman(searchInput, SEARCH_PHRASE);
+    await page.keyboard.press('Enter');
+    await withTimeout(
+        () =>
+            Promise.all([
+                page.waitForLoadState('domcontentloaded'),
+                page.waitForURL((url) => url.toString().includes('?s='), { timeout: 15000 }).catch(() => null),
+            ]),
+        HANG_TIMEOUT_MS,
+        'Search results load',
+    );
+    await page.waitForTimeout(1200);
+    await waitForSearchResults(page, SELECTORS.SearchResultCard);
+    await dismissInterferingPopups(page, SELECTORS);
+};
+
+const ensureSlotCardAvailable = async (page: Page, config: ProjectConfig): Promise<Locator> => {
+    const { SELECTORS } = config;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        const resultsFirstSlot = page.locator(SELECTORS.SearchResultCard).first();
+        const archiveFirstSlot = page.locator(SELECTORS.FirstGameCard).first();
+        const targetSlot = (await resultsFirstSlot.count()) > 0 ? resultsFirstSlot : archiveFirstSlot;
+
+        try {
+            await targetSlot.waitFor({ state: 'visible', timeout: 15000 });
+            return targetSlot;
+        } catch (error) {
+            const serviceUnavailableVisible = await page
+                .locator('text=Service Unavailable')
+                .first()
+                .isVisible()
+                .catch(() => false);
+
+            if (serviceUnavailableVisible && attempt === 1) {
+                console.warn('[Search] 503 Service Unavailable detected; retrying full search flow.');
+                await prepareLandingPage(page, config);
+                await runSearchFlow(page, config);
+                continue;
+            }
+
+            throw error;
+        }
+    }
+
+    throw new Error('Slot cards not visible after retries.');
+};
+
 // Small helper to wait for either search suggestions or a short timeout.
-const waitForSearchResults = async (page: Page) => {
-    const resultsLocator = '#ajaxsearchliteres1 .article-card__image-wrapper > a';
+const waitForSearchResults = async (page: Page, resultsSelector: string) => {
+    const resultsLocator = resultsSelector;
     await Promise.race([
         page.waitForSelector(resultsLocator, { state: 'visible', timeout: 12000 }),
         page.waitForTimeout(2000),
     ]).catch(() => null);
+};
+
+// When JC launches a slot, it opens a separate tab—listen for whichever event fires first.
+const waitForSecondaryPage = async (page: Page, timeoutMs = 15000) => {
+    const popupPromise = page.waitForEvent('popup', { timeout: timeoutMs }).catch(() => null);
+    const contextPromise = page.context().waitForEvent('page', { timeout: timeoutMs }).catch(() => null);
+    return Promise.race([popupPromise, contextPromise]);
 };
 
 // Mobile-specific: immediately navigate back to the slot list once the demo closes.
@@ -306,7 +394,61 @@ const prepareDemoButton = async (page: Page, selector: string) => {
 };
 
 // Click the CTA, retrying via JS if the DOM overlay blocks the press.
-const clickDemoCta = async (page: Page, selector: string) => {
+const clickDemoCta = async (page: Page, selector: string, mode: DemoLaunchMode) => {
+    if (mode === 'new_tab') {
+        const buttons = page.locator(selector);
+        const matches = await buttons.count();
+        if (matches === 0) {
+            throw new Error(`Demo CTA selector "${selector}" did not match any elements.`);
+        }
+
+        let simpleButton: Locator | null = null;
+        for (let index = 0; index < matches; index++) {
+            const candidate = buttons.nth(index);
+            await candidate.waitFor({ state: 'attached', timeout: 10000 }).catch(() => null);
+            if (await candidate.isVisible().catch(() => false)) {
+                const hasSize = await candidate
+                    .evaluate((node) => {
+                        if (!(node instanceof HTMLElement)) return false;
+                        const box = node.getBoundingClientRect();
+                        return box.width > 0 && box.height > 0;
+                    })
+                    .catch(() => false);
+                if (hasSize) {
+                    simpleButton = candidate;
+                    break;
+                }
+            }
+        }
+
+        if (!simpleButton) {
+            simpleButton = buttons.first();
+        }
+
+        await simpleButton.waitFor({ state: 'visible', timeout: 20000 }).catch(() => null);
+        await page.evaluate(() => {
+            window.scrollBy({ top: window.innerHeight * 0.25, behavior: 'auto' });
+        });
+        await simpleButton.scrollIntoViewIfNeeded().catch(() => null);
+        await simpleButton.evaluate((node) => {
+            const el = node as HTMLElement | null;
+            el?.scrollIntoView({ behavior: 'auto', block: 'center' });
+        }).catch(() => null);
+        await page.waitForTimeout(400);
+        await simpleButton.click({ delay: randomDelay(80, 140), force: true, noWaitAfter: true }).catch(async (error) => {
+            await simpleButton
+                ?.evaluate((el) => {
+                    if (el instanceof HTMLElement) {
+                        el.click();
+                    }
+                })
+                .catch(() => {
+                    throw error;
+                });
+        });
+        return simpleButton;
+    }
+
     const demoButton = await prepareDemoButton(page, selector);
     const buttonHandle = await demoButton.elementHandle();
     if (!buttonHandle) {
@@ -336,7 +478,7 @@ const clickDemoCta = async (page: Page, selector: string) => {
 };
 
 // --- MAIN TEST -------------------------------------------------------------
-test('P1 Mobile: JP slot search and demo smoke', async ({ page }, testInfo) => {
+test('P1 Mobile: JP/JC slot search and demo smoke', async ({ page }, testInfo) => {
     const projectName = testInfo.project.name;
 
     if (!isSupportedProject(projectName)) {
@@ -345,39 +487,16 @@ test('P1 Mobile: JP slot search and demo smoke', async ({ page }, testInfo) => {
     }
 
     const config = CONFIG[projectName];
-    const { BASE_URL, SEARCH_PHRASE, SELECTORS, BACK_STEPS } = config;
+    const { BASE_URL, SEARCH_PHRASE, SELECTORS, BACK_STEPS, DEMO_MODE } = config;
+    let newlyOpenedDemoPage: Page | null = null;
 
-    await test.step('1. Navigate to JP slot list', async () => {
-        await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
-        const cookieHandled = (await clickCookieAllowAllIfPresent(page)) || (await acceptCookiesIfPresent(page));
-        if (!cookieHandled) {
-            await page.waitForTimeout(500);
-            await clickCookieAllowAllIfPresent(page);
-        }
-        dismissInterferingPopups(page, SELECTORS);
-        await page.waitForLoadState('networkidle');
+    await test.step('1. Navigate to slot list', async () => {
+        await prepareLandingPage(page, config);
         console.log('Step 1 complete: Landing page ready.');
     });
 
     await test.step('2. Search for Sizzling Hot Deluxe', async () => {
-        const searchInput = page.locator(SELECTORS.SearchInput).first();
-        await searchInput.waitFor({ state: 'visible', timeout: 15000 });
-        await searchInput.scrollIntoViewIfNeeded();
-        await page.waitForTimeout(300);
-        await typeLikeHuman(searchInput, SEARCH_PHRASE);
-        await page.keyboard.press('Enter');
-        await withTimeout(
-            () =>
-                Promise.all([
-                    page.waitForLoadState('domcontentloaded'),
-                    page.waitForURL((url) => url.toString().includes('?s='), { timeout: 15000 }).catch(() => null),
-                ]),
-            HANG_TIMEOUT_MS,
-            'Search results load',
-        );
-        await page.waitForTimeout(1200);
-        await waitForSearchResults(page);
-        dismissInterferingPopups(page, SELECTORS);
+        await runSearchFlow(page, config);
         console.log('Step 2 complete: Search results loaded.');
     });
 
@@ -386,11 +505,7 @@ test('P1 Mobile: JP slot search and demo smoke', async ({ page }, testInfo) => {
         await page.waitForTimeout(300);
         dismissInterferingPopups(page, SELECTORS);
 
-        const resultsFirstSlot = page.locator('#ajaxsearchliteres1 .article-card__image-wrapper > a').first();
-        const archiveFirstSlot = page.locator(SELECTORS.FirstGameCard).first();
-        const targetSlot = (await resultsFirstSlot.count()) > 0 ? resultsFirstSlot : archiveFirstSlot;
-
-        await targetSlot.waitFor({ state: 'visible', timeout: 15000 });
+        const targetSlot = await ensureSlotCardAvailable(page, config);
         await targetSlot.scrollIntoViewIfNeeded();
         await targetSlot.hover();
         await page.waitForTimeout(300);
@@ -418,16 +533,41 @@ test('P1 Mobile: JP slot search and demo smoke', async ({ page }, testInfo) => {
         console.log('Step 3 complete: Navigated to slot details.');
     });
 
-    await test.step('4. Launch demo CTA and wait for game load', async () => {
-        await withTimeout(() => clickDemoCta(page, SELECTORS.DemoCTA), HANG_TIMEOUT_MS, 'Demo CTA click');
+    await test.step('4. Launch demo CTA and confirm open state', async () => {
+        let secondaryPagePromise: Promise<Page | null> | undefined;
+        if (DEMO_MODE === 'new_tab') {
+            secondaryPagePromise = waitForSecondaryPage(page, 15000);
+        }
+
+        await withTimeout(() => clickDemoCta(page, SELECTORS.DemoCTA, DEMO_MODE), HANG_TIMEOUT_MS, 'Demo CTA click');
+
+        if (DEMO_MODE === 'new_tab' && secondaryPagePromise) {
+            newlyOpenedDemoPage = await secondaryPagePromise;
+            expect(newlyOpenedDemoPage, 'Demo should open a new page/tab.').toBeTruthy();
+            await newlyOpenedDemoPage?.waitForLoadState('domcontentloaded').catch(() => null);
+            console.log('Step 4 complete: Demo opened in a new tab.');
+            return;
+        }
 
         const waitDuration = randomDelay(3000, 4000);
         await page.waitForTimeout(waitDuration);
-        console.log('Step 4 complete: Demo launched and wait elapsed.');
+        console.log('Step 4 complete: Demo launched within popup.');
     });
 
-    await test.step('5. Close demo popup', async () => {
-        const closeButton = page.locator(SELECTORS.CloseButton).first();
+    await test.step('5. Validate demo dismissal state', async () => {
+        if (DEMO_MODE === 'new_tab') {
+            expect(newlyOpenedDemoPage, 'Demo should open a secondary tab.').toBeTruthy();
+            await newlyOpenedDemoPage?.close().catch(() => null);
+            console.log('Step 5 complete: Demo tab detected and closed.');
+            return;
+        }
+
+        const closeSelector = SELECTORS.CloseButton;
+        if (!closeSelector) {
+            throw new Error('Close button selector missing for popup demo project.');
+        }
+
+        const closeButton = page.locator(closeSelector).first();
         await withTimeout(() => expect(closeButton).toBeVisible({ timeout: 15000 }), HANG_TIMEOUT_MS, 'Demo popup open');
         await closeButton.click({ delay: randomDelay(60, 130) });
         await expect(closeButton).toBeHidden({ timeout: 10000 });
