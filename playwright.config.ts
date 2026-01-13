@@ -3,7 +3,8 @@
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
-    testDir: './tests/e2e',
+    testDir: '.',
+    testMatch: ['tests/e2e/**/*.spec.ts'],
 
     // ➡️ FIX: Explicitly set output directory outside the default volatile location.
     outputDir: './artifact-history', 
@@ -15,7 +16,7 @@ export default defineConfig({
     workers: process.env.CI ? 1 : 3,
 
     // FIX: Retain artifacts for successful runs and failures
-    retries: 1, 
+    retries: 0, 
     reporter: [
       ['list'], // Standard list reporter
       ['html', { outputFolder: 'playwright-report', open: 'never' }]
@@ -62,12 +63,13 @@ export default defineConfig({
     
     projects: [
         // Projects are ordered to start with casino.com.ro
-         { name: 'casino.com.ro', use: { baseURL: 'https://casino.com.ro' } },
-         { name: 'supercazino', use: { baseURL: 'https://www.supercazino.ro' } },
-         { name: 'jocpacanele', use: { baseURL: 'https://jocpacanele.ro' } },
-         { name: 'jocuricazinouri', use: { baseURL: 'https://jocuricazinouri.com' } },
-         { name: 'jocsloturi', use: { baseURL: 'https://jocsloturi.ro' } },
-         { name: 'beturi', use: { baseURL: 'https://beturi.ro' } },
+       { name: 'casino.com.ro', use: { baseURL: 'https://casino.com.ro' } },
+       { name: 'beturi', use: { baseURL: 'https://beturi.ro' } },
+       { name: 'jocsloturi', use: { baseURL: 'https://jocsloturi.ro' } },
+       { name: 'jocpacanele', use: { baseURL: 'https://jocpacanele.ro' } },
+       { name: 'jocuricazinouri', use: { baseURL: 'https://jocuricazinouri.com' } },
+       { name: 'supercazino', use: { baseURL: 'https://www.supercazino.ro' } },
+
     ],
 });
 

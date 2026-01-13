@@ -4,7 +4,7 @@
 import { test, expect, TestInfo, Page } from '@playwright/test'; 
 import * as fs from "fs"; 
 import path from "path"; 
-import { siteConfigs, SiteName } from './config/sites'; 
+import { siteConfigs, SiteName } from '../config/sites'; 
 
 /**
  * Helper to get the siteName from the Playwright Project Name.

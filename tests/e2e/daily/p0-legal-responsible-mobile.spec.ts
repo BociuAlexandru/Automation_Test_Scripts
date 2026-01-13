@@ -7,12 +7,13 @@
 
 // 💥 CRITICAL IMPORTS
 // Playwright's core testing functions and TypeScript types.
-import { test, expect, type TestInfo, type Page } from '@playwright/test'; 
+import { test, expect, type TestInfo, type Page, devices } from '@playwright/test'; 
+
 // Node.js modules for file system (fs) and path manipulation, used for CSV logging.
 import * as fs from "fs"; 
 import path from "path"; 
 // Configuration for the target sites.
-import { siteConfigs, SiteName } from './config/sites'; 
+import { siteConfigs, SiteName } from '../config/sites'; 
 
 /**
  * Helper to get the siteName from the Playwright Project Name.
@@ -21,6 +22,16 @@ import { siteConfigs, SiteName } from './config/sites';
 const getSiteNameFromProject = (projectName: string): SiteName => {
     return projectName as SiteName;
 };
+
+// Force iPhone 13 mobile context for this spec
+const { defaultBrowserType: _ignored, ...iPhone13Descriptor } = devices["iPhone 13"];
+test.use({
+    ...iPhone13Descriptor,
+    locale: "ro-RO",
+    timezoneId: "Europe/Bucharest",
+    permissions: ["geolocation"],
+    ignoreHTTPSErrors: true,
+});
 
 // --- GLOBAL STATE CONFIGURATION (CHECKPOINTING) ---
 // This section is part of the original project structure but is currently unused

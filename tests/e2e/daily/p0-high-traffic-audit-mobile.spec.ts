@@ -1,7 +1,18 @@
-// tests/e2e/p0-high-traffic-audit-desktop.spec.ts
+// tests/e2e/p0-high-traffic-audit-mobile.spec.ts
 import { test, devices, type Response } from "@playwright/test";
-import { siteConfigs, type SiteName } from "./config/sites";
+import { siteConfigs, type SiteName } from "../config/sites";
 import * as fs from "fs"; 
+
+// ✅ Force iPhone 13 device context for this mobile audit
+const { defaultBrowserType: _ignored, ...iPhone13Descriptor } = devices["iPhone 13"];
+const BASE_MOBILE_CONTEXT_OPTIONS = {
+    ...iPhone13Descriptor,
+    locale: "ro-RO",
+    timezoneId: "Europe/Bucharest",
+    permissions: ["geolocation"],
+    ignoreHTTPSErrors: true,
+};
+test.use(BASE_MOBILE_CONTEXT_OPTIONS);
 
 // Define the structure for a soft failure
 type SoftFailure = {
@@ -63,7 +74,7 @@ async function closeModalOrPopup(page: any) {
 }
 
 
-test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser, page, request }, testInfo) => { 
+test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser }, testInfo) => { 
   
     // ⚠️ NOTE: Removed console.log(dateTime) and process.exit(0)
     test.setTimeout(120 * 60 * 1000); 
@@ -88,15 +99,21 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser, pag
     
     const softFailures: SoftFailure[] = [];
     
-    const viewportSettings = testInfo.project.use.viewport || devices["Desktop Chrome"].viewport;
-    const ignoreHTTPSErrors = testInfo.project.use.ignoreHTTPSErrors;
-    const userAgent = testInfo.project.use.userAgent;
+    const mobileContextOptions = {
+        ...BASE_MOBILE_CONTEXT_OPTIONS,
+        ignoreHTTPSErrors: testInfo.project.use.ignoreHTTPSErrors ?? BASE_MOBILE_CONTEXT_OPTIONS.ignoreHTTPSErrors,
+    };
+    const viewportSettings = mobileContextOptions.viewport ?? { width: 390, height: 844 };
+    const userAgent = mobileContextOptions.userAgent;
+    const deviceScaleFactor = mobileContextOptions.deviceScaleFactor;
+    const isMobile = mobileContextOptions.isMobile;
+    const hasTouch = mobileContextOptions.hasTouch;
+    const locale = mobileContextOptions.locale;
+    const timezoneId = mobileContextOptions.timezoneId;
+    const permissions = mobileContextOptions.permissions;
     
     const csvHeader = 'Project,Source Page,CTA Text,Issue Type,Details,Failing URL\n';
     fs.writeFileSync(newCSVFilePath, csvHeader, { encoding: 'utf8' });
-
-    await removeWebdriverDetection(page); 
-
 
     for (const currentPath of cfg.highTrafficPaths) {
         // Check if the current page should be entirely skipped (e.g., if it's in sites.ts skippedPaths)
@@ -105,19 +122,23 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser, pag
             continue; // Skip to the next path
         }
         
-        const auditPage = await browser.newPage({ 
-            viewport: viewportSettings, 
-            ignoreHTTPSErrors: ignoreHTTPSErrors, 
-            userAgent: userAgent,
-        }); 
-        await removeWebdriverDetection(auditPage); 
+        const context = await browser.newContext(mobileContextOptions);
+        const auditPage = await context.newPage(); 
+        await removeWebdriverDetection(auditPage);
+        let contextClosed = false;
+        const closeContextIfNeeded = async () => {
+            if (!contextClosed) {
+                contextClosed = true;
+                await context.close();
+            }
+        };
 
         await test.step(`Audit Page: ${currentPath}`, async () => {
             let pageElementCount = 0; 
             
             // 1. Navigate to the page with realistic timing
             try {
-                await auditPage.setExtraHTTPHeaders({ 'Referer': baseURL + (cfg.highTrafficPaths[0] || "/"), });
+                await auditPage.setExtraHTTPHeaders({ 'Referer': baseURL + (cfg.highTrafficPaths[0] || "/") });
                 await auditPage.goto(baseURL + currentPath, { waitUntil: "domcontentloaded", timeout: 30_000 });
                 await auditPage.waitForLoadState("domcontentloaded");
             } catch (error: any) {
@@ -128,7 +149,7 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser, pag
                 
                 softFailures.push({ sourcePath: currentPath, ctaText: 'Page Load', reason: 'Page Load Failure', details: { message: error?.message ?? String(error) }, csvRow: csvRow });
                 console.error(`[${projectName}] ❌ FAIL Page Load on ${currentPath}: ${error?.message ?? String(error)}`);
-                await auditPage.close(); 
+                await closeContextIfNeeded(); 
                 return; 
             }
 
@@ -171,7 +192,7 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser, pag
             
             if (affiliateLinkCount === 0) {
                 console.warn(`[${projectName}] [WARN] No affiliate links found matching pattern on ${currentPath}`);
-                await auditPage.close();
+                await closeContextIfNeeded();
                 return;
             }
             
@@ -318,8 +339,7 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser, pag
                 }
             }
         });
-        // Ensure the stable auditPage is closed after its step finishes
-        await auditPage.close();
+        await closeContextIfNeeded();
     }
 
     // Final Reporting (JSON Attachment)

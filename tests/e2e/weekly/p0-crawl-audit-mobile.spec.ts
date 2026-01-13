@@ -1,8 +1,8 @@
 // tests/e2e/p0-crawl-audit-mobile.spec.ts
 
 import { test, devices, type Browser, type Page, type Response } from "@playwright/test";
-import { siteConfigs, type SiteName } from "./config/sites";
-import { crawlSite } from "./config/crawler";
+import { siteConfigs, type SiteName } from "../config/sites";
+import { crawlSite } from "../config/crawler";
 import * as fs from "fs"; // ⬅️ Reintroducing file system module
 
 // ✅ Force iPhone 13 mobile context for this spec

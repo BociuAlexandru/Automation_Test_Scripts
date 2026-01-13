@@ -3,7 +3,7 @@
 // CRITICAL IMPORTS
 import { test, expect, TestInfo, devices, Locator } from '@playwright/test'; 
 import * as fs from "fs"; 
-import { siteConfigs, SiteName } from './config/sites'; 
+import { siteConfigs, SiteName } from '../config/sites'; 
 import {
     BASE_REPORT_DIR,
     CSV_FAILURE_FILE,
@@ -16,7 +16,7 @@ import {
     humanizePage,
     buildAbsoluteUrl,
     logFailureToCsv,
-} from './helpers/mobileMenuUtils';
+} from '../helpers/mobileMenuUtils';
 
 /**
  * Helper to get the siteName from the Playwright Project Name.
