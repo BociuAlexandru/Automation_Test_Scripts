@@ -1,6 +1,6 @@
 // tests/e2e/p0-homepage-smoke-desktop.spec.ts (V79 - Jocsloturi Implemented)
 
-// 💥 CRITICAL IMPORTS
+// CRITICAL IMPORTS
 import { test, expect, TestInfo, Page } from '@playwright/test'; 
 import * as fs from "fs"; 
 import path from "path"; 
@@ -14,12 +14,28 @@ const getSiteNameFromProject = (projectName: string): SiteName => {
 };
 
 // --- CSV CONFIGURATION ---
-const BASE_REPORT_DIR = path.join(process.cwd(), 'artifact-history');
-const CSV_FAILURE_FILE = path.join(BASE_REPORT_DIR, 'homepage_smoke_failures.csv');
+const BASE_REPORT_DIR = path.join(process.cwd(), 'failures');
+const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-');
+
 const CSV_HEADER = 'Project,Test ID,Failure Type,Details,Failing URL\n';
 
+function getCsvFilePath(projectName: string) {
+    return path.join(BASE_REPORT_DIR, `${projectName}_p0-homepage-smoke-desktop_${RUN_TIMESTAMP}.csv`);
+}
+
+function ensureCsvInitialized(projectName: string) {
+    if (!fs.existsSync(BASE_REPORT_DIR)) {
+        fs.mkdirSync(BASE_REPORT_DIR, { recursive: true });
+    }
+    const csvPath = getCsvFilePath(projectName);
+    if (!fs.existsSync(csvPath)) {
+        fs.writeFileSync(csvPath, CSV_HEADER, { encoding: 'utf8' });
+        console.log(`[CSV] Initialized ${csvPath}`);
+    }
+    return csvPath;
+}
+
 // --- CORE UTILITY FUNCTIONS ---
-// Function to strip diacritics (accents/cedillas) for case-insensitive, character-insensitive comparison
 function stripDiacritics(text: string): string {
     return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
@@ -80,16 +96,9 @@ function csvEscape(str: string | null | undefined): string {
 
 function logFailureToCsv(projectName: string, testId: string, type: string, details: string, url: string) {
     const csvRow = `${csvEscape(projectName)},${csvEscape(testId)},${csvEscape(type)},${csvEscape(details)},${csvEscape(url)}`;
-    
-    // Ensure the directory exists before writing
-    if (!fs.existsSync(BASE_REPORT_DIR)) {
-        fs.mkdirSync(BASE_REPORT_DIR, { recursive: true });
-    }
-    
-    // Append the row to the file
-    fs.appendFileSync(CSV_FAILURE_FILE, csvRow + '\n', { encoding: 'utf8' });
+    const csvFilePath = ensureCsvInitialized(projectName);
+    fs.appendFileSync(csvFilePath, csvRow + '\n', { encoding: 'utf8' });
 }
-
 
 // --- TYPE DEFINITION (Simplified for generic H1 test) ---
 type MenuMapItem = { 
@@ -123,14 +132,7 @@ test('H1: Homepage Load Performance - Initial Load and Key Elements Visibility',
     
     // 1. CSV Initialization (Run once for the first project in the test config)
     if (projectName === 'casino.com.ro' || projectName === 'beturi' || projectName === 'jocpacanele' || projectName === 'jocsloturi') { // Ensures initialization happens
-        if (!fs.existsSync(BASE_REPORT_DIR)) {
-            fs.mkdirSync(BASE_REPORT_DIR, { recursive: true });
-        }
-        // Only re-write the header if it's the very first project, otherwise append
-        if (projectName === 'casino.com.ro') { 
-             fs.writeFileSync(CSV_FAILURE_FILE, CSV_HEADER, { encoding: 'utf8' });
-             console.log(`[CSV] Initialized ${CSV_FAILURE_FILE}`);
-        }
+        ensureCsvInitialized(siteName);
         // Reset soft failure accumulator at the start of the entire test run
         softFailuresAcc = []; 
     }

@@ -2,12 +2,8 @@
 
 // CRITICAL IMPORTS
 import { test, expect, TestInfo, devices, Locator } from '@playwright/test'; 
-import * as fs from "fs"; 
 import { siteConfigs, SiteName } from '../config/sites'; 
 import {
-    BASE_REPORT_DIR,
-    CSV_FAILURE_FILE,
-    CSV_HEADER,
     SITE_TO_MENU_MAP,
     MOBILE_MENU_CONFIG,
     closeCookiePopupIfPresent,
@@ -16,6 +12,7 @@ import {
     humanizePage,
     buildAbsoluteUrl,
     logFailureToCsv,
+    ensureCsvInitialized,
 } from '../helpers/mobileMenuUtils';
 
 /**
@@ -49,14 +46,7 @@ test('H1: Homepage Load Performance - Initial Load and Key Elements Visibility',
     
     // 1. CSV Initialization (Run once for the first project in the test config)
     if (projectName === 'casino.com.ro' || projectName === 'beturi' || projectName === 'jocpacanele' || projectName === 'jocsloturi') { // Ensures initialization happens
-        if (!fs.existsSync(BASE_REPORT_DIR)) {
-            fs.mkdirSync(BASE_REPORT_DIR, { recursive: true });
-        }
-        // Only re-write the header if it's the very first project, otherwise append
-        if (projectName === 'casino.com.ro') { 
-             fs.writeFileSync(CSV_FAILURE_FILE, CSV_HEADER, { encoding: 'utf8' });
-             console.log(`[CSV] Initialized ${CSV_FAILURE_FILE}`);
-        }
+        ensureCsvInitialized(siteName);
         // Reset soft failure accumulator at the start of the entire test run
         softFailuresAcc = []; 
     }

@@ -2,6 +2,7 @@
 import { test, devices, type Response } from "@playwright/test";
 import { siteConfigs, type SiteName } from "../config/sites";
 import * as fs from "fs"; 
+import path from "path";
 
 // Define the structure for a soft failure
 type SoftFailure = {
@@ -14,7 +15,9 @@ type SoftFailure = {
 
 // Define REDIRECT_TIMEOUT globally
 const REDIRECT_TIMEOUT = 15000; // 15 seconds for robust redirect monitoring
-const CSV_FAILURE_FOLDER = 'failures'; // Folder for organizing failure reports
+const CSV_FAILURE_FOLDER = path.join(process.cwd(), "failures");
+const CSV_HEADER = 'Project,Source Page,CTA Text,Issue Type,Details,Failing URL\n';
+const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-');
 
 // Function to safely escape strings for CSV
 function csvEscape(str: string | null | undefined) {
@@ -70,14 +73,17 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser, pag
 
     const projectName = testInfo.project.name as SiteName;
     
-    // ➡️ FIX 2: Define unique file path and ensure folder exists 
-    const dateTime = new Date().toISOString().replace(/[:.]/g, '-');
-    const newCSVFileName = `${projectName}_${dateTime}.csv`;
-    const newCSVFilePath = `${CSV_FAILURE_FOLDER}/${newCSVFileName}`;
-
     if (!fs.existsSync(CSV_FAILURE_FOLDER)) {
-        fs.mkdirSync(CSV_FAILURE_FOLDER);
+        fs.mkdirSync(CSV_FAILURE_FOLDER, { recursive: true });
     }
+    const csvFilePath = path.join(
+        CSV_FAILURE_FOLDER,
+        `${projectName}_p0-high-traffic-desktop_${RUN_TIMESTAMP}.csv`,
+    );
+    fs.writeFileSync(csvFilePath, CSV_HEADER, { encoding: 'utf8' });
+    const appendCsvRow = (row: string) => {
+        fs.appendFileSync(csvFilePath, row + '\n', { encoding: 'utf8' });
+    };
     
     console.log(`[${projectName}] Starting redirect chain audit.`);
     const cfg = siteConfigs[projectName];
@@ -92,9 +98,6 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser, pag
     const ignoreHTTPSErrors = testInfo.project.use.ignoreHTTPSErrors;
     const userAgent = testInfo.project.use.userAgent;
     
-    const csvHeader = 'Project,Source Page,CTA Text,Issue Type,Details,Failing URL\n';
-    fs.writeFileSync(newCSVFilePath, csvHeader, { encoding: 'utf8' });
-
     await removeWebdriverDetection(page); 
 
 
@@ -124,7 +127,7 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser, pag
                 // Page Load Failure Logic
                 const csvDetail = `Page Load Failure: ${error?.message ?? String(error)}`;
                 const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape('Page Load')},${csvEscape('Page Load Failure')},${csvEscape(csvDetail)},${csvEscape(baseURL + currentPath)}`;
-                fs.appendFileSync(newCSVFilePath, csvRow + '\n', { encoding: 'utf8' });
+                appendCsvRow(csvRow);
                 
                 softFailures.push({ sourcePath: currentPath, ctaText: 'Page Load', reason: 'Page Load Failure', details: { message: error?.message ?? String(error) }, csvRow: csvRow });
                 console.error(`[${projectName}] ❌ FAIL Page Load on ${currentPath}: ${error?.message ?? String(error)}`);
@@ -199,7 +202,7 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser, pag
 
                     const csvDetail = `Missing Attributes: ${missingDetails.join(", ")}`;
                     const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape("Tracking Attribute Missing")},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`;
-                    fs.appendFileSync(newCSVFilePath, csvRow + '\n', { encoding: 'utf8' });
+                    appendCsvRow(csvRow);
                     
                     softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: "Missing Tracking Attributes (Business Logic)", details: csvDetail, csvRow: csvRow });
                     console.error(`[${projectName}] ❌ FAIL ${ctaId} from ${currentPath}: Missing Attributes: ${missingDetails.join(", ")}`);
@@ -210,7 +213,7 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser, pag
                 if (target !== "_blank" && !skipAudit) {
                     const csvDetail = `Missing target="_blank"`;
                     const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape("Target Blank Missing")},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`;
-                    fs.appendFileSync(newCSVFilePath, csvRow + '\n', { encoding: 'utf8' });
+                    appendCsvRow(csvRow);
 
                     softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: "Target Blank Missing", details: csvDetail, csvRow: csvRow });
                     console.error(`[${projectName}] ❌ FAIL ${ctaId} from ${currentPath}: Target Blank Missing`);
@@ -252,7 +255,7 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser, pag
                             if (internalResponse && internalResponse.status() === 404) {
                                 const csvDetail = `Internal tracking link returned 404. URL: ${internalRequest.url()}`;
                                 const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape("Internal Redirect 404")},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`;
-                                fs.appendFileSync(newCSVFilePath, csvRow + '\n', { encoding: 'utf8' });
+                                appendCsvRow(csvRow);
                                 
                                 softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: "Internal Redirect 404", details: csvDetail, csvRow: csvRow });
                                 console.error(`[${projectName}] ❌ FAIL ${ctaId} from ${currentPath}: Internal Redirect 404`);
@@ -267,7 +270,7 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser, pag
                         if (finalOrigin === projectOrigin) {
                             const csvDetail = `Redirection failed to leave domain. Final URL: ${finalUrl}`;
                             const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape("Final URL is Internal")},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`;
-                            fs.appendFileSync(newCSVFilePath, csvRow + '\n', { encoding: 'utf8' });
+                            appendCsvRow(csvRow);
 
                             softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: "Final URL is Internal", details: csvDetail, csvRow: csvRow });
                             console.error(`[${projectName}] ❌ FAIL ${ctaId} from ${currentPath}: Final URL is Internal - ${finalUrl}`);
@@ -304,7 +307,7 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser, pag
                         const logError = error.message.includes("Timeout") ? "Redirect Timeout" : reason;
                         const csvDetail = `Error: ${logError}. Message: ${error.message}`;
                         const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape("Redirection Failure")},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`;
-                        fs.appendFileSync(newCSVFilePath, csvRow + '\n', { encoding: 'utf8' });
+                        appendCsvRow(csvRow);
 
                         softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: logError, details: csvDetail, csvRow: csvRow });
                         console.error(`[${projectName}] ❌ FAIL ${ctaId} from ${currentPath}: ${logError}`);
@@ -329,5 +332,5 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser, pag
         testInfo.annotations.push({ type: "Audit Failures", description: `${softFailures.length} audit failures found. Check attachment.`, });
     }
 
-    console.log(`[${projectName}] Audit Completed. Failures: ${softFailures.length}. Report saved to ${newCSVFilePath}`);
+    console.log(`[${projectName}] Audit Completed. Failures: ${softFailures.length}. Appended to ${csvFilePath}`);
 });

@@ -50,9 +50,28 @@ function writeState(state: ResumeState) {
 
 // --- CSV CONFIGURATION ---
 // Defines where the failure report is stored and the column headers for the CSV file.
-const BASE_REPORT_DIR = path.join(process.cwd(), 'artifact-history');
-const CSV_FAILURE_FILE = path.join(BASE_REPORT_DIR, 'legal_responsible_failures.csv');
+const BASE_REPORT_DIR = path.join(process.cwd(), 'failures');
+const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-');
 const CSV_HEADER = 'Project,Test ID,Failure Type,Details,Failing URL\n';
+
+function getCsvFilePath(projectName: string) {
+    return path.join(
+        BASE_REPORT_DIR,
+        `${projectName}_p0-legal-responsible-mobile_${RUN_TIMESTAMP}.csv`,
+    );
+}
+
+function ensureCsvInitialized(projectName: string) {
+    if (!fs.existsSync(BASE_REPORT_DIR)) {
+        fs.mkdirSync(BASE_REPORT_DIR, { recursive: true });
+    }
+    const csvPath = getCsvFilePath(projectName);
+    if (!fs.existsSync(csvPath)) {
+        fs.writeFileSync(csvPath, CSV_HEADER, { encoding: 'utf8' });
+        console.log(`[CSV] Initialized Legal Compliance Report: ${csvPath}`);
+    }
+    return csvPath;
+}
 
 // -------------------------------------------------------------------------
 // 🛠️ SECTION 2: CORE UTILITY FUNCTIONS
@@ -73,12 +92,8 @@ function csvEscape(str: string | null | undefined): string {
  */
 function logFailureToCsv(projectName: string, testId: string, type: string, details: string, url: string) {
     const csvRow = `${csvEscape(projectName)},${csvEscape(testId)},${csvEscape(type)},${csvEscape(details)},${csvEscape(url)}`;
-    
-    if (!fs.existsSync(BASE_REPORT_DIR)) {
-        fs.mkdirSync(BASE_REPORT_DIR, { recursive: true });
-    }
-    
-    fs.appendFileSync(CSV_FAILURE_FILE, csvRow + '\n', { encoding: 'utf8' });
+    const csvFilePath = ensureCsvInitialized(projectName);
+    fs.appendFileSync(csvFilePath, csvRow + '\n', { encoding: 'utf8' });
 }
 
 /**
@@ -281,9 +296,6 @@ test.describe('P0 Legal and Responsible Gaming Compliance', () => {
         if (!fs.existsSync(BASE_REPORT_DIR)) {
             fs.mkdirSync(BASE_REPORT_DIR, { recursive: true });
         }
-        // Overwrites the CSV file with the header for a clean start
-        fs.writeFileSync(CSV_FAILURE_FILE, CSV_HEADER, { encoding: 'utf8' });
-        console.log(`[CSV] Initialized Legal Compliance Report: ${CSV_FAILURE_FILE}`);
     });
 
     // CRITICAL FIX: Defines ONE test block. Playwright automatically runs this block 

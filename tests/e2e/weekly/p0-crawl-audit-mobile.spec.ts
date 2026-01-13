@@ -4,6 +4,7 @@ import { test, devices, type Browser, type Page, type Response } from "@playwrig
 import { siteConfigs, type SiteName } from "../config/sites";
 import { crawlSite } from "../config/crawler";
 import * as fs from "fs"; // ⬅️ Reintroducing file system module
+import path from "path";
 
 // ✅ Force iPhone 13 mobile context for this spec
 const { defaultBrowserType: _ignored, ...iPhone13Descriptor } = devices["iPhone 13"];
@@ -27,7 +28,33 @@ type SoftFailure = {
 
 // Define REDIRECT_TIMEOUT globally
 const REDIRECT_TIMEOUT = 15000; // 15 seconds for robust redirect monitoring
-const CSV_FAILURE_FILE = 'crawl_audit_failures.csv'; // ⬅️ FIXED, SINGLE CSV FILENAME
+const CSV_FAILURE_DIR = path.join(process.cwd(), "failures");
+const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, "-");
+const CSV_HEADER = 'Project,Source Page,CTA Text,Issue Type,Details,Failing URL\n';
+
+function getCsvFilePath(projectName: SiteName) {
+    return path.join(
+        CSV_FAILURE_DIR,
+        `${projectName}_crawl-audit-mobile_${RUN_TIMESTAMP}.csv`,
+    );
+}
+
+function ensureCsvInitialized(projectName: SiteName) {
+    if (!fs.existsSync(CSV_FAILURE_DIR)) {
+        fs.mkdirSync(CSV_FAILURE_DIR, { recursive: true });
+    }
+    const csvPath = getCsvFilePath(projectName);
+    if (!fs.existsSync(csvPath)) {
+        fs.writeFileSync(csvPath, CSV_HEADER, { encoding: "utf8" });
+        console.log(`[CSV] Initialized Crawl Audit Report: ${csvPath}`);
+    }
+    return csvPath;
+}
+
+function appendFailureRow(projectName: SiteName, csvRow: string) {
+    const csvPath = ensureCsvInitialized(projectName);
+    fs.appendFileSync(csvPath, csvRow + "\n", { encoding: "utf8" });
+}
 
 // Function to safely escape strings for CSV (Carried over from original script)
 function csvEscape(str: string | null | undefined) {
@@ -112,7 +139,7 @@ async function runPageAudit(
             const message = error?.message ?? String(error);
             const csvDetail = `Page Load Failure: ${message}`;
             const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape('Page Load')},${csvEscape('Page Load Failure')},${csvEscape(csvDetail)},${csvEscape(baseURL + currentPath)}`; // ⬅️ CSV Row Created
-            fs.appendFileSync(CSV_FAILURE_FILE, csvRow + '\n', { encoding: 'utf8' }); // ⬅️ Logging to CSV
+            appendFailureRow(projectName, csvRow); // ⬅️ Logging to CSV
 
             softFailures.push({ sourcePath: currentPath, ctaText: 'Page Load', reason: reason, details: { message: message }, csvRow: csvRow });
             console.error(`[${projectName}] ❌ FAIL Page Load on ${currentPath}: ${message}`);
@@ -178,37 +205,33 @@ async function runPageAudit(
                 continue; 
             }
 
-            // ATTRIBUTE ENFORCEMENT
             if (!hasTrackingAttributes) {
-                let missingDetails: string[] = []; 
+                let missingDetails: string[] = [];
                 if (!hasClass) missingDetails.push(".affiliate-meta-link class");
                 if (!hasDataCasino) missingDetails.push("data-casino/data-casino-name");
 
                 const csvDetail = `Missing Attributes: ${missingDetails.join(", ")}`;
-                const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape("Tracking Attribute Missing")},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`; // ⬅️ CSV Row Created
-                fs.appendFileSync(CSV_FAILURE_FILE, csvRow + '\n', { encoding: 'utf8' }); // ⬅️ Logging to CSV
-                
+                const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape("Tracking Attribute Missing")},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`;
+                appendFailureRow(projectName, csvRow);
+
                 softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: "Missing Tracking Attributes (Business Logic)", details: csvDetail, csvRow: csvRow });
                 console.error(`[${projectName}] ❌ FAIL ${ctaId} from ${currentPath}: Missing Attributes: ${missingDetails.join(", ")}`);
                 skipAudit = true;
             }
 
-            // Target Blank Check
             if (target !== "_blank" && !skipAudit) {
                 const csvDetail = `Missing target="_blank"`;
-                const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape("Target Blank Missing")},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`; // ⬅️ CSV Row Created
-                fs.appendFileSync(CSV_FAILURE_FILE, csvRow + '\n', { encoding: 'utf8' }); // ⬅️ Logging to CSV
+                const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape("Target Blank Missing")},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`;
+                appendFailureRow(projectName, csvRow);
 
                 softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: "Target Blank Missing", details: csvDetail, csvRow: csvRow });
                 console.error(`[${projectName}] ❌ FAIL ${ctaId} from ${currentPath}: Target Blank Missing`);
             }
 
-            // --- Core Redirection Audit ---
             if (typeof href === "string" && !skipAudit) {
-                let popup: any;
-                
+                let popup: Page | undefined;
+
                 try {
-                    // 1. Monitor the click action and wait for the new page/popup
                     const [newPopup, response] = await Promise.all([
                         auditPage.waitForEvent("popup", { timeout: REDIRECT_TIMEOUT }),
                         auditPage.evaluate((s) => {
@@ -217,10 +240,9 @@ async function runPageAudit(
                         }, selector),
                     ])
                     .then(([p]) => {
-                        popup = p; 
+                        popup = p;
                         return Promise.all([
                             popup,
-                            // Wait for the first actual response on the new tab
                             popup.waitForResponse((r: Response) => r.url().startsWith("http"), { timeout: REDIRECT_TIMEOUT }),
                         ]);
                     }).catch(async (error) => {
@@ -228,42 +250,38 @@ async function runPageAudit(
                         throw error;
                     });
 
-                    // 2. Get the redirect chain
                     const request = response.request();
-                    const chain: any = (request as any).redirectChain; 
-                    
-                    // 3. Check 1: No 404 in Our Domain
-                    const internalRequest = Array.isArray(chain) && chain.length > 0 ? chain[0] : null; 
-                    
+                    const chain: any = (request as any).redirectChain;
+                    const internalRequest = Array.isArray(chain) && chain.length > 0 ? chain[0] : null;
+
                     if (internalRequest) {
                         const internalResponse = await internalRequest.response();
                         if (internalResponse && internalResponse.status() === 404) {
                             const csvDetail = `Internal tracking link returned 404. URL: ${internalRequest.url()}`;
-                            const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape("Internal Redirect 404")},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`; // ⬅️ CSV Row Created
-                            fs.appendFileSync(CSV_FAILURE_FILE, csvRow + '\n', { encoding: 'utf8' }); // ⬅️ Logging to CSV
+                            const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape("Internal Redirect 404")},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`;
+                            appendFailureRow(projectName, csvRow);
 
                             softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: "Internal Redirect 404", details: csvDetail, csvRow: csvRow });
                             console.error(`[${projectName}] ❌ FAIL ${ctaId} from ${currentPath}: Internal Redirect 404`);
                         }
                     }
 
-                    // 4. Check 2: Final Destination is NOT Our Domain
                     const finalUrl = response.url();
                     const finalOrigin = new URL(finalUrl).origin;
-                    const projectOrigin = new URL(baseURL).origin; 
+                    const projectOrigin = new URL(baseURL).origin;
 
                     if (finalOrigin === projectOrigin) {
                         const csvDetail = `Redirection failed to leave domain. Final URL: ${finalUrl}`;
-                        const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape("Final URL is Internal")},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`; // ⬅️ CSV Row Created
-                        fs.appendFileSync(CSV_FAILURE_FILE, csvRow + '\n', { encoding: 'utf8' }); // ⬅️ Logging to CSV
+                        const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape("Final URL is Internal")},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`;
+                        appendFailureRow(projectName, csvRow);
 
                         softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: "Final URL is Internal", details: csvDetail, csvRow: csvRow });
                         console.error(`[${projectName}] ❌ FAIL ${ctaId} from ${currentPath}: Final URL is Internal - ${finalUrl}`);
                     } else {
                         console.log(`[${projectName}] ✅ PASS ${ctaId} from ${currentPath} -> Redirected to ${finalOrigin}`);
                     }
+
                 } catch (error: any) {
-                    // WAF/TIMEOUT FIX: Fail-Forward on timeout
                     let finalUrlOnTimeout: string | null = null;
                     if (popup) {
                         try { finalUrlOnTimeout = popup.url() || ""; } catch {}
@@ -273,29 +291,28 @@ async function runPageAudit(
                         ? `Redirect Timeout (> ${REDIRECT_TIMEOUT / 1000}s)`
                         : `Click/Monitor Error: ${error.message}`;
 
-                    // WAF/TIMEOUT FIX: If final URL is external on timeout, treat as PASS.
                     if (finalUrlOnTimeout && finalUrlOnTimeout.startsWith("http")) {
                         try {
                             const timeoutOrigin = new URL(finalUrlOnTimeout).origin;
-                            const projectOrigin = new URL(baseURL).origin; 
+                            const projectOrigin = new URL(baseURL).origin;
 
                             if (timeoutOrigin !== projectOrigin) {
-                                if (popup) { await popup.close().catch(() => {}); } 
+                                if (popup) { await popup.close().catch(() => {}); }
                                 console.log(`[${projectName}] ✅ PASS ${ctaId} from ${currentPath} -> Bypassed WAF/Error to ${timeoutOrigin}`);
-                                return; // Exit audit for this CTA
+                                continue;
                             }
                         } catch {}
                     }
-                    // If we couldn't bypass, log the original failure
+
                     const logError = error.message.includes("Timeout") ? "Redirect Timeout" : reason;
                     const csvDetail = `Error: ${logError}. Message: ${error.message}`;
-                    const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape("Redirection Failure")},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`; // ⬅️ CSV Row Created
-                    fs.appendFileSync(CSV_FAILURE_FILE, csvRow + '\n', { encoding: 'utf8' }); // ⬅️ Logging to CSV
+                    const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape("Redirection Failure")},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`;
+                    appendFailureRow(projectName, csvRow);
 
                     softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: logError, details: csvDetail, csvRow: csvRow });
                     console.error(`[${projectName}] ❌ FAIL ${ctaId} from ${currentPath}: ${logError}`);
+
                 } finally {
-                    // Ensure the new tab is CLOSED (Final safety)
                     if (popup) {
                         try { if (!popup.isClosed()) await popup.close().catch(() => {}); } catch {}
                     }
@@ -315,13 +332,7 @@ test("P0 - Crawl CTA Audit (Redirect Chain Check)", async ({ browser }, testInfo
     test.setTimeout(120 * 60 * 1000); 
 
     const projectName = testInfo.project.name as SiteName;
-    const csvHeader = 'Project,Source Page,CTA Text,Issue Type,Details,Failing URL\n';
-
-    // ⬅️ CRITICAL FIX: Overwrite CSV file at the start of the FIRST test run.
-    if (projectName === 'casino.com.ro') { 
-        fs.writeFileSync(CSV_FAILURE_FILE, csvHeader, { encoding: 'utf8' });
-    }
-    // For all other projects, the file is ready to be appended to.
+    ensureCsvInitialized(projectName);
 
     console.log(`\n[${projectName}] Starting redirect chain crawl audit.`);
     const cfg = siteConfigs[projectName];

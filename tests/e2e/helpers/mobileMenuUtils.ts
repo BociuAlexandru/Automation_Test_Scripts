@@ -3,9 +3,25 @@ import * as fs from 'fs';
 import path from 'path';
 import { SiteName } from '../config/sites';
 
-export const BASE_REPORT_DIR = path.join(process.cwd(), 'artifact-history');
-export const CSV_FAILURE_FILE = path.join(BASE_REPORT_DIR, 'homepage_smoke_failures.csv');
+export const BASE_REPORT_DIR = path.join(process.cwd(), 'failures');
+const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-');
 export const CSV_HEADER = 'Project,Test ID,Failure Type,Details,Failing URL\n';
+
+export function getCsvFailureFile(projectName: string) {
+    return path.join(BASE_REPORT_DIR, `${projectName}_p0-homepage-smoke-mobile_${RUN_TIMESTAMP}.csv`);
+}
+
+export function ensureCsvInitialized(projectName: string) {
+    if (!fs.existsSync(BASE_REPORT_DIR)) {
+        fs.mkdirSync(BASE_REPORT_DIR, { recursive: true });
+    }
+    const csvPath = getCsvFailureFile(projectName);
+    if (!fs.existsSync(csvPath)) {
+        fs.writeFileSync(csvPath, CSV_HEADER, { encoding: 'utf8' });
+        console.log(`[CSV] Initialized ${csvPath}`);
+    }
+    return csvPath;
+}
 
 const COOKIE_DISMISS_SELECTORS: Partial<Record<SiteName, string[]>> = {
     beturi: ['#CybotCookiebotDialogBodyButtonDecline'],
@@ -168,10 +184,8 @@ export function buildAbsoluteUrl(baseURL: string, href: string | null | undefine
 
 export function logFailureToCsv(projectName: string, testId: string, type: string, details: string, url: string) {
     const csvRow = `${csvEscape(projectName)},${csvEscape(testId)},${csvEscape(type)},${csvEscape(details)},${csvEscape(url)}`;
-    if (!fs.existsSync(BASE_REPORT_DIR)) {
-        fs.mkdirSync(BASE_REPORT_DIR, { recursive: true });
-    }
-    fs.appendFileSync(CSV_FAILURE_FILE, csvRow + '\n', { encoding: 'utf8' });
+    const csvPath = ensureCsvInitialized(projectName);
+    fs.appendFileSync(csvPath, csvRow + '\n', { encoding: 'utf8' });
 }
 
 export async function closeCookiePopupIfPresent(page: Page, siteName: SiteName): Promise<boolean> {
