@@ -6,9 +6,6 @@ export default defineConfig({
     testDir: '.',
     testMatch: ['tests/e2e/**/*.spec.ts'],
 
-    // ➡️ FIX: Explicitly set output directory outside the default volatile location.
-    outputDir: './artifact-history', 
-
     // ⏱️ Hard set per-test timeout to 120 minutes (2 hours)
     timeout: 120 * 60 * 1000,
     
