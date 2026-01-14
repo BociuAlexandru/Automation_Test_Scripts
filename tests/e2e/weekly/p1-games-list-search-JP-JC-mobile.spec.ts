@@ -1,4 +1,6 @@
 import { test, expect, devices, Page, Locator } from '@playwright/test';
+import * as fs from 'fs';
+import path from 'path';
 
 // --- DEVICE & CONTEXT SETUP ------------------------------------------------
 // Use the built-in iPhone 13 descriptor so the test behaves like a mobile user.
@@ -89,6 +91,23 @@ const CONFIG: Record<SupportedProject, ProjectConfig> = {
 };
 
 const isSupportedProject = (name: string): name is SupportedProject => name in CONFIG;
+
+const VERBOSE_LOGGING = false;
+const CSV_FAILURE_DIR = path.join(process.cwd(), 'failures');
+const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-');
+const CSV_HEADER = 'Project,Step,Details,URL,Error Message\n';
+
+const verboseLog = (...args: unknown[]) => {
+    if (VERBOSE_LOGGING) {
+        console.log(...args);
+    }
+};
+
+const verboseWarn = (...args: unknown[]) => {
+    if (VERBOSE_LOGGING) {
+        console.warn(...args);
+    }
+};
 
 // Utility: wrap operations with a descriptive timeout for better logs.
 const randomDelay = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -303,6 +322,72 @@ const normalizeUrl = (input: string) => {
 // Escape dynamic URLs before building regex expectations.
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const csvEscape = (value: unknown) => {
+    if (value === null || value === undefined) return '""';
+    const str = String(value).replace(/"/g, '""').replace(/(\r\n|\n|\r)/gm, ' ');
+    return `"${str}"`;
+};
+
+const getCsvFilePath = (projectName: string) =>
+    path.join(CSV_FAILURE_DIR, `${projectName}_p1-games-list-search-JP-JC-mobile_${RUN_TIMESTAMP}.csv`);
+
+const ensureCsvInitialized = (projectName: string) => {
+    if (!fs.existsSync(CSV_FAILURE_DIR)) {
+        fs.mkdirSync(CSV_FAILURE_DIR, { recursive: true });
+    }
+    const csvPath = getCsvFilePath(projectName);
+    if (!fs.existsSync(csvPath)) {
+        fs.writeFileSync(csvPath, CSV_HEADER, { encoding: 'utf8' });
+    }
+    return csvPath;
+};
+
+const appendFailureRow = (projectName: string, csvRow: string) => {
+    const csvPath = ensureCsvInitialized(projectName);
+    fs.appendFileSync(csvPath, `${csvRow}\n`, { encoding: 'utf8' });
+};
+
+const logStepFailure = (projectName: string, stepName: string, details: string, page: Page, error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    let currentUrl = 'about:blank';
+    try {
+        currentUrl = page.url();
+    } catch {
+        // ignore
+    }
+    const csvRow = [
+        csvEscape(projectName),
+        csvEscape(stepName),
+        csvEscape(details),
+        csvEscape(currentUrl),
+        csvEscape(message),
+    ].join(',');
+    appendFailureRow(projectName, csvRow);
+};
+
+const logStepStatus = (stepName: string, passed: boolean) => {
+    const prefix = passed ? '✅' : '❌';
+    console.log(`${prefix} ${stepName}`);
+};
+
+const runAuditedStep = async (
+    page: Page,
+    projectName: string,
+    stepName: string,
+    action: () => Promise<void>,
+) => {
+    await test.step(stepName, async () => {
+        try {
+            await action();
+            logStepStatus(stepName, true);
+        } catch (error) {
+            logStepFailure(projectName, stepName, `Failed during ${stepName}`, page, error);
+            logStepStatus(stepName, false);
+            throw error;
+        }
+    });
+};
+
 // The CTA lives in a "slot placeholder" with overlays; reveal it through DOM tweaks.
 const ensurePlaceholderVisible = async (page: Page, button: Locator) => {
     const placeholderHandle = await button.evaluateHandle((el) => el.closest('.slot-placeholder'));
@@ -490,17 +575,17 @@ test('P1 Mobile: JP/JC slot search and demo smoke', async ({ page }, testInfo) =
     const { BASE_URL, SEARCH_PHRASE, SELECTORS, BACK_STEPS, DEMO_MODE } = config;
     let newlyOpenedDemoPage: Page | null = null;
 
-    await test.step('1. Navigate to slot list', async () => {
+    await runAuditedStep(page, projectName, '1. Navigate to slot list', async () => {
         await prepareLandingPage(page, config);
-        console.log('Step 1 complete: Landing page ready.');
+        verboseLog('Step 1 complete: Landing page ready.');
     });
 
-    await test.step('2. Search for Sizzling Hot Deluxe', async () => {
+    await runAuditedStep(page, projectName, '2. Search for Sizzling Hot Deluxe', async () => {
         await runSearchFlow(page, config);
-        console.log('Step 2 complete: Search results loaded.');
+        verboseLog('Step 2 complete: Search results loaded.');
     });
 
-    await test.step('3. Tap first slot card from results', async () => {
+    await runAuditedStep(page, projectName, '3. Tap first slot card from results', async () => {
         await page.waitForLoadState('domcontentloaded');
         await page.waitForTimeout(300);
         dismissInterferingPopups(page, SELECTORS);
@@ -530,10 +615,10 @@ test('P1 Mobile: JP/JC slot search and demo smoke', async ({ page }, testInfo) =
         await clickCookieAllowAllIfPresent(page);
         await acceptCookiesIfPresent(page);
         dismissInterferingPopups(page, SELECTORS);
-        console.log('Step 3 complete: Navigated to slot details.');
+        verboseLog('Step 3 complete: Navigated to slot details.');
     });
 
-    await test.step('4. Launch demo CTA and confirm open state', async () => {
+    await runAuditedStep(page, projectName, '4. Launch demo CTA and confirm open state', async () => {
         let secondaryPagePromise: Promise<Page | null> | undefined;
         if (DEMO_MODE === 'new_tab') {
             secondaryPagePromise = waitForSecondaryPage(page, 15000);
@@ -545,20 +630,20 @@ test('P1 Mobile: JP/JC slot search and demo smoke', async ({ page }, testInfo) =
             newlyOpenedDemoPage = await secondaryPagePromise;
             expect(newlyOpenedDemoPage, 'Demo should open a new page/tab.').toBeTruthy();
             await newlyOpenedDemoPage?.waitForLoadState('domcontentloaded').catch(() => null);
-            console.log('Step 4 complete: Demo opened in a new tab.');
+            verboseLog('Step 4 complete: Demo opened in a new tab.');
             return;
         }
 
         const waitDuration = randomDelay(3000, 4000);
         await page.waitForTimeout(waitDuration);
-        console.log('Step 4 complete: Demo launched within popup.');
+        verboseLog('Step 4 complete: Demo launched within popup.');
     });
 
-    await test.step('5. Validate demo dismissal state', async () => {
+    await runAuditedStep(page, projectName, '5. Validate demo dismissal state', async () => {
         if (DEMO_MODE === 'new_tab') {
             expect(newlyOpenedDemoPage, 'Demo should open a secondary tab.').toBeTruthy();
             await newlyOpenedDemoPage?.close().catch(() => null);
-            console.log('Step 5 complete: Demo tab detected and closed.');
+            verboseLog('Step 5 complete: Demo tab detected and closed.');
             return;
         }
 
@@ -571,12 +656,12 @@ test('P1 Mobile: JP/JC slot search and demo smoke', async ({ page }, testInfo) =
         await withTimeout(() => expect(closeButton).toBeVisible({ timeout: 15000 }), HANG_TIMEOUT_MS, 'Demo popup open');
         await closeButton.click({ delay: randomDelay(60, 130) });
         await expect(closeButton).toBeHidden({ timeout: 10000 });
-        console.log('Step 5 complete: Demo popup closed.');
+        verboseLog('Step 5 complete: Demo popup closed.');
     });
 
-    await test.step('6. Return to slot list', async () => {
+    await runAuditedStep(page, projectName, '6. Return to slot list', async () => {
         await navigateBackToBaseUrl(page, BASE_URL, BACK_STEPS);
         await expect(page).toHaveURL(new RegExp(`^${escapeRegex(normalizeUrl(BASE_URL))}`));
-        console.log('Step 6 complete: Returned to initial slot list.');
+        verboseLog('Step 6 complete: Returned to initial slot list.');
     });
 });

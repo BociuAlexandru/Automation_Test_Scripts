@@ -1,4 +1,6 @@
 import { devices, expect, Locator, Page, test } from '@playwright/test';
+import * as fs from 'fs';
+import path from 'path';
 
 // --- DEVICE SETUP -----------------------------------------------------------
 const { defaultBrowserType: _ignored, ...iPhone13Descriptor } = devices['iPhone 13'];
@@ -14,6 +16,10 @@ test.use({
 // --- CONSTANTS --------------------------------------------------------------
 const BASE_URL = 'https://www.supercazino.ro/sloturi-gratis/';
 const SEARCH_PHRASE = 'Sizzling Hot Deluxe';
+const VERBOSE_LOGGING = false;
+const CSV_FAILURE_DIR = path.join(process.cwd(), 'failures');
+const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-');
+const CSV_HEADER = 'Project,Step,Details,URL,Error Message\n';
 
 const SEARCH_INPUT_SELECTOR = 'form[role="search"] input.orig[aria-label="Search input"]';
 const FIRST_RESULT_SELECTOR = 'a.mb-3[href*="sizzling-hot-deluxe"]';
@@ -30,6 +36,18 @@ const NEWSLETTER_CLOSE_SELECTOR =
 
 // --- HELPERS ----------------------------------------------------------------
 const randomDelay = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+const verboseLog = (...args: unknown[]) => {
+    if (VERBOSE_LOGGING) {
+        console.log(...args);
+    }
+};
+
+const verboseWarn = (...args: unknown[]) => {
+    if (VERBOSE_LOGGING) {
+        console.warn(...args);
+    }
+};
 
 const normalizeUrl = (input: string) => {
     try {
@@ -141,43 +159,112 @@ const ensureReturnToListPage = async (page: Page, baseUrl: string) => {
         });
 };
 
+const csvEscape = (value: unknown) => {
+    if (value === null || value === undefined) return '""';
+    const str = String(value).replace(/"/g, '""').replace(/(\r\n|\n|\r)/gm, ' ');
+    return `"${str}"`;
+};
+
+const getCsvFilePath = (projectName: string) =>
+    path.join(CSV_FAILURE_DIR, `${projectName}_p1-games-list-search-SC-mobile_${RUN_TIMESTAMP}.csv`);
+
+const ensureCsvInitialized = (projectName: string) => {
+    if (!fs.existsSync(CSV_FAILURE_DIR)) {
+        fs.mkdirSync(CSV_FAILURE_DIR, { recursive: true });
+    }
+    const csvPath = getCsvFilePath(projectName);
+    if (!fs.existsSync(csvPath)) {
+        fs.writeFileSync(csvPath, CSV_HEADER, { encoding: 'utf8' });
+    }
+    return csvPath;
+};
+
+const appendFailureRow = (projectName: string, csvRow: string) => {
+    const csvPath = ensureCsvInitialized(projectName);
+    fs.appendFileSync(csvPath, `${csvRow}\n`, { encoding: 'utf8' });
+};
+
+const logStepFailure = (projectName: string, stepName: string, details: string, page: Page, error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    let currentUrl = 'about:blank';
+    try {
+        currentUrl = page.url();
+    } catch {
+        // ignore
+    }
+    const csvRow = [
+        csvEscape(projectName),
+        csvEscape(stepName),
+        csvEscape(details),
+        csvEscape(currentUrl),
+        csvEscape(message),
+    ].join(',');
+    appendFailureRow(projectName, csvRow);
+};
+
+const logStepStatus = (stepName: string, passed: boolean) => {
+    const prefix = passed ? '✅' : '❌';
+    console.log(`${prefix} ${stepName}`);
+};
+
+const runAuditedStep = async (
+    page: Page,
+    projectName: string,
+    stepName: string,
+    action: () => Promise<void>,
+) => {
+    await test.step(stepName, async () => {
+        try {
+            await action();
+            logStepStatus(stepName, true);
+        } catch (error) {
+            logStepFailure(projectName, stepName, `Failed during ${stepName}`, page, error);
+            logStepStatus(stepName, false);
+            throw error;
+        }
+    });
+};
+
 // --- TEST -------------------------------------------------------------------
-test('P1 Mobile: SC slot search and demo flow', async ({ page }) => {
+test('P1 Mobile: SC slot search and demo flow', async ({ page }, testInfo) => {
+    const projectName = testInfo.project.name;
+
     // Step 1: Load initial URL
-    await test.step('1. Load SC slot list', async () => {
+    await runAuditedStep(page, projectName, '1. Load SC slot list', async () => {
         await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
         await page.waitForLoadState('networkidle');
         await handleAmbientPopups(page);
-        console.log('[Step 1] Loaded SC slot list and cleared popups.');
+        verboseLog('Loaded SC slot list and cleared popups.');
     });
 
     // Step 2: Scroll until search field is visible
-    await test.step('2. Scroll to search field', async () => {
+    await runAuditedStep(page, projectName, '2. Scroll to search field', async () => {
         const searchInput = page.locator(SEARCH_INPUT_SELECTOR);
         if ((await searchInput.count()) === 0) {
             await page.evaluate(() => window.scrollTo({ top: 450, behavior: 'instant' }));
         }
         await searchInput.first().scrollIntoViewIfNeeded().catch(() => null);
         await handleAmbientPopups(page);
-        console.log('[Step 2] Search input is in viewport.');
+        verboseLog('Search input is in viewport.');
     });
 
     // Step 3: Enter search phrase and submit with Enter
-    await test.step('3. Enter search phrase and submit', async () => {
+    await runAuditedStep(page, projectName, '3. Enter search phrase and submit', async () => {
         const searchInput = page.locator(SEARCH_INPUT_SELECTOR);
         await typeLikeHuman(searchInput, SEARCH_PHRASE);
         await handleAmbientPopups(page);
         await page.keyboard.press('Enter');
         await page.waitForLoadState('domcontentloaded');
         await page.waitForTimeout(1000);
-        console.log('[Step 3] Search submitted.');
+        verboseLog('Search submitted.');
     });
 
     // Step 4: Click first search result
-    await test.step('4. Open first search result', async () => {
+    await runAuditedStep(page, projectName, '4. Open first search result', async () => {
         const firstResult = page.locator(FIRST_RESULT_SELECTOR).first();
         await firstResult.waitFor({ state: 'visible', timeout: 10000 });
         await firstResult.scrollIntoViewIfNeeded();
+
         await forceSameTabNavigation(firstResult);
         await Promise.all([
             page.waitForURL(/\/joc-slot\/.+/, { timeout: 15000 }),
@@ -186,11 +273,11 @@ test('P1 Mobile: SC slot search and demo flow', async ({ page }) => {
         ]);
         await page.waitForTimeout(800);
         await handleAmbientPopups(page);
-        console.log('[Step 4] Navigated to slot details page.');
+        verboseLog('Navigated to slot details page.');
     });
 
     // Step 5: Click JOACA GRATIS CTA to open demo
-    await test.step('5. Launch demo popup', async () => {
+    await runAuditedStep(page, projectName, '5. Launch demo popup', async () => {
         const maxAttempts = 4;
         const popupIframe = page.locator(DEMO_IFRAME_SELECTOR).first();
 
@@ -206,39 +293,40 @@ test('P1 Mobile: SC slot search and demo flow', async ({ page }) => {
 
             try {
                 await popupIframe.waitFor({ state: 'visible', timeout: 7000 });
-                console.log(`5. Demo popup detected on attempt ${attempt}/${maxAttempts}.`);
+                verboseLog(`Demo popup detected on attempt ${attempt}/${maxAttempts}.`);
                 break;
             } catch {
                 if (attempt === maxAttempts) {
                     throw new Error('Demo popup did not appear after multiple attempts.');
                 }
                 await handleAmbientPopups(page);
+                verboseWarn(`Demo popup not detected on attempt ${attempt}. Retrying...`);
             }
         }
-        console.log('[Step 5] Demo popup opened.');
+        verboseLog('Demo popup opened.');
     });
 
     // Step 6: Wait for demo to load fully (3-4 seconds)
-    await test.step('6. Wait for demo to load', async () => {
+    await runAuditedStep(page, projectName, '6. Wait for demo to load', async () => {
         const waitTime = randomDelay(3000, 4000);
         await page.waitForTimeout(waitTime);
-        console.log(`[Step 6] Waited ${waitTime}ms for demo load.`);
+        verboseLog(`Waited ${waitTime}ms for demo load.`);
     });
 
     // Step 7: Close popup
-    await test.step('7. Close demo popup', async () => {
+    await runAuditedStep(page, projectName, '7. Close demo popup', async () => {
         const closeButton = page.locator(CLOSE_POPUP_SELECTOR).first();
         await expect(closeButton).toBeVisible({ timeout: 10000 });
         await closeButton.click({ delay: randomDelay(60, 120) });
         await expect(closeButton).toBeHidden({ timeout: 10000 });
         await page.waitForTimeout(500);
-        console.log('[Step 7] Demo popup closed.');
+        verboseLog('Demo popup closed.');
     });
 
     // Step 8: Return to initial URL
-    await test.step('8. Return to slot list', async () => {
+    await runAuditedStep(page, projectName, '8. Return to slot list', async () => {
         await ensureReturnToListPage(page, BASE_URL);
         await expect(page).toHaveURL(BASE_URL, { timeout: 10000 });
-        console.log('[Step 8] Back on SC slot list.');
+        verboseLog('Back on SC slot list.');
     });
 });

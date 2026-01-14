@@ -1,6 +1,8 @@
 // File Path: tests/e2e/p1-games-list-search.spec.ts
 
 import { test, expect, Page } from '@playwright/test';
+import * as fs from 'fs';
+import path from 'path';
 
 // --- PROJECT CONFIGURATION DATA ---
 type ProjectConfig = {
@@ -40,6 +42,27 @@ const isSupportedProject = (name: string): name is SupportedProject => name in C
 const randomDelay = (min: number, max: number) =>
     Math.floor(Math.random() * (max - min + 1)) + min;
 
+const VERBOSE_LOGGING = false;
+const CSV_FAILURE_DIR = path.join(process.cwd(), 'failures');
+const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-');
+const CSV_HEADER = 'Project,Step,Details,URL,Error Message\n';
+
+const verboseLog = (...args: unknown[]) => {
+    if (VERBOSE_LOGGING) {
+        console.log(...args);
+    }
+};
+
+const normalizeUrl = (input: string) => {
+    const url = new URL(input);
+    url.hash = '';
+    url.search = '';
+    if (!url.pathname.endsWith('/')) {
+        url.pathname += '/';
+    }
+    return url.toString();
+};
+
 const typeLikeHuman = async (page: Page, selector: string, text: string) => {
     const input = page.locator(selector);
     await input.waitFor({ state: 'visible' });
@@ -58,15 +81,15 @@ const acceptCookiesIfPresent = async (page: Page) => {
         'button:has-text("Accept selection")',
         'button:has-text("De acord")',
         '.cmplz-btn.cmplz-accept',
-        '#cmplz-accept'
+        '#cmplz-accept',
     ];
 
     for (const selector of selectors) {
         const button = page.locator(selector).first();
-        if ((await button.count()) > 0 && await button.isVisible()) {
+        if ((await button.count()) > 0 && (await button.isVisible())) {
             await button.click({ delay: randomDelay(50, 120) });
             await page.waitForTimeout(randomDelay(250, 400));
-            console.log(`Cookies banner dismissed using selector: ${selector}`);
+            verboseLog(`Cookies banner dismissed using selector: ${selector}`);
             return true;
         }
     }
@@ -74,8 +97,94 @@ const acceptCookiesIfPresent = async (page: Page) => {
     return false;
 };
 
+const csvEscape = (value: unknown) => {
+    if (value === null || value === undefined) return '""';
+    const str = String(value).replace(/"/g, '""').replace(/(\r\n|\n|\r)/gm, ' ');
+    return `"${str}"`;
+};
+
+const getCsvFilePath = (projectName: string) =>
+    path.join(CSV_FAILURE_DIR, `${projectName}_p1-games-list-search-SC-desktop_${RUN_TIMESTAMP}.csv`);
+
+const ensureCsvInitialized = (projectName: string) => {
+    if (!fs.existsSync(CSV_FAILURE_DIR)) {
+        fs.mkdirSync(CSV_FAILURE_DIR, { recursive: true });
+    }
+    const csvPath = getCsvFilePath(projectName);
+    if (!fs.existsSync(csvPath)) {
+        fs.writeFileSync(csvPath, CSV_HEADER, { encoding: 'utf8' });
+    }
+    return csvPath;
+};
+
+const appendFailureRow = (projectName: string, csvRow: string) => {
+    const csvPath = ensureCsvInitialized(projectName);
+    fs.appendFileSync(csvPath, `${csvRow}\n`, { encoding: 'utf8' });
+};
+
+const logStepFailure = (projectName: string, stepName: string, details: string, page: Page, error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    let currentUrl = 'about:blank';
+    try {
+        currentUrl = page.url();
+    } catch {
+        // ignore
+    }
+    const csvRow = [
+        csvEscape(projectName),
+        csvEscape(stepName),
+        csvEscape(details),
+        csvEscape(currentUrl),
+        csvEscape(message),
+    ].join(',');
+    appendFailureRow(projectName, csvRow);
+};
+
+const logStepStatus = (stepName: string, passed: boolean) => {
+    const prefix = passed ? '✅' : '❌';
+    console.log(`${prefix} ${stepName}`);
+};
+
+const ensureReturnToStart = async (page: Page, baseUrl: string, maxAttempts: number) => {
+    const targetUrl = normalizeUrl(baseUrl);
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const currentNormalized = normalizeUrl(page.url());
+        if (currentNormalized.startsWith(targetUrl)) {
+            return;
+        }
+
+        await page.goBack({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null);
+        await page.waitForTimeout(600);
+        await page.waitForLoadState('domcontentloaded').catch(() => null);
+    }
+
+    const normalizedCurrent = normalizeUrl(page.url());
+    if (!normalizedCurrent.startsWith(targetUrl)) {
+        await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+        await page.waitForLoadState('networkidle').catch(() => null);
+    }
+};
+
+const runAuditedStep = async <T>(
+    page: Page,
+    projectName: string,
+    stepName: string,
+    action: () => Promise<T>,
+): Promise<T> => {
+    return await test.step(stepName, async () => {
+        try {
+            const result = await action();
+            logStepStatus(stepName, true);
+            return result;
+        } catch (error) {
+            logStepFailure(projectName, stepName, `Failed during ${stepName}`, page, error);
+            logStepStatus(stepName, false);
+            throw error;
+        }
+    });
+};
+
 test('P1: Full Slot Game Search and Demo Flow', async ({ page }, testInfo) => {
-    
     // --- DYNAMIC CONFIGURATION BLOCK ---
     // 1. Get the current running project name from the Playwright context
     const projectName = testInfo.project.name;
@@ -101,45 +210,44 @@ test('P1: Full Slot Game Search and Demo Flow', async ({ page }, testInfo) => {
 
     // --- STEP 1: Navigate to the specific URL (using dynamic BASE_URL) ---
     // Action: Use page.goto to navigate to the exact starting link.
-    await test.step(`1. Navigate directly to the starting URL: ${BASE_URL}`, async () => {
+    await runAuditedStep(page, projectName, `1. Navigate directly to the starting URL: ${BASE_URL}`, async () => {
         await page.goto(BASE_URL);
         await acceptCookiesIfPresent(page);
-        console.log(`1. Navigated to: ${BASE_URL}`);
+        verboseLog(`Navigated to: ${BASE_URL}`);
     });
 
     // --- STEP 2: Ensure the page loads and is scrollable ---
     // Action: Wait for stability and perform a scroll. No selector needed.
-    await test.step('2. Ensure page loads and scroll is correct', async () => {
+    await runAuditedStep(page, projectName, '2. Ensure page loads and scroll is correct', async () => {
         await page.waitForLoadState('networkidle');
         // Executes a small scroll to mimic user behavior and trigger lazy-loading
         await page.evaluate(() => window.scrollTo(0, 300));
-        console.log('2. Page loaded and initial scroll performed.');
+        verboseLog('Page loaded and initial scroll performed.');
     });
 
     // --- STEP 3: Recognize the search bar and input the specific text 'Sizzling Hot Deluxe' ---
     // Action: Use page.fill with the SearchInput selector and the specific phrase.
-    await test.step(`3. Enter specific search phrase: '${SEARCH_PHRASE}'`, async () => {
+    await runAuditedStep(page, projectName, `3. Enter specific search phrase: '${SEARCH_PHRASE}'`, async () => {
         await page.hover(SELECTORS.SearchInput);
         await page.waitForTimeout(randomDelay(200, 400));
         await typeLikeHuman(page, SELECTORS.SearchInput, SEARCH_PHRASE);
-        console.log(`3. Entered specific search phrase like a human: ${SEARCH_PHRASE}`);
+        verboseLog(`Entered specific search phrase like a human: ${SEARCH_PHRASE}`);
     });
 
     // --- STEP 4: Submit the search by pressing 'Enter' on the input field ---
-    await test.step('4. Submit the search by pressing Enter (Bug Workaround)', async () => {
-    // Action: Use page.press on the input field to simulate pressing Enter
-    // We are deliberately bypassing the bugged SearchButton click.
+    await runAuditedStep(page, projectName, '4. Submit the search by pressing Enter (Bug Workaround)', async () => {
+        // Action: Use page.press on the input field to simulate pressing Enter
+        // We are deliberately bypassing the bugged SearchButton click.
         await page.keyboard.press('Enter');
 
-    // Crucial Wait: Wait for the URL to change or the results to load after submission
+        // Crucial Wait: Wait for the URL to change or the results to load after submission
         await page.waitForLoadState('domcontentloaded'); 
-    
-        console.log('4. Search submitted by pressing Enter.');
+        verboseLog('Search submitted by pressing Enter.');
     });
 
     
     // --- STEP 5: Click on the first game card to redirect to the Single Slot page ---
-    await test.step('5. Click on the first game card', async () => {
+    await runAuditedStep(page, projectName, '5. Click on the first game card', async () => {
         const firstCard = page.locator(SELECTORS.FirstGameCard).first();
         await firstCard.waitFor({ state: 'visible' });
 
@@ -158,12 +266,12 @@ test('P1: Full Slot Game Search and Demo Flow', async ({ page }, testInfo) => {
 
         await acceptCookiesIfPresent(page);
         await page.waitForTimeout(randomDelay(300, 500));
-        console.log(`5. Clicked first game card and stayed on: ${page.url()}`);
+        verboseLog(`Clicked first game card and stayed on: ${page.url()}`);
     });
 
     // --- STEP 6: On the Single Slot page, click the CTA 'JOACĂ GRATIS' ---
     // Action: Use a human-like click on the Demo CTA selector and verify the popup opens.
-    await test.step('6. Click the Demo CTA to open the popup', async () => {
+    await runAuditedStep(page, projectName, '6. Click the Demo CTA to open the popup', async () => {
         const popupIframe = page.locator(SELECTORS.GameIframe).first();
         const maxAttempts = 4;
 
@@ -183,10 +291,10 @@ test('P1: Full Slot Game Search and Demo Flow', async ({ page }, testInfo) => {
             try {
                 await popupIframe.waitFor({ state: 'visible', timeout: 7000 });
                 await page.waitForTimeout(3000);
-                console.log(`6. Popup opened after clicking CTA (attempt ${attempt}/${maxAttempts}).`);
+                verboseLog(`Popup opened after clicking CTA (attempt ${attempt}/${maxAttempts}).`);
                 return;
             } catch {
-                console.warn(`6. Popup not detected after attempt ${attempt}. Retrying...`);
+                verboseLog(`Popup not detected after attempt ${attempt}. Retrying...`);
                 await page.waitForTimeout(randomDelay(400, 700));
             }
         }
@@ -195,67 +303,35 @@ test('P1: Full Slot Game Search and Demo Flow', async ({ page }, testInfo) => {
     });
 
     // --- STEP 7: Wait for the demo game slot popup to fully load ---
-    await test.step('7. Wait for the demo game slot popup to fully load', async () => {
+    await runAuditedStep(page, projectName, '7. Wait for the demo game slot popup to fully load', async () => {
         const gameIframe = page.locator(SELECTORS.GameIframe).first();
         await expect(gameIframe).toBeVisible({ timeout: 20000 });
 
         const closeBtn = page.locator(SELECTORS.CloseButton).first();
         await expect(closeBtn).toBeVisible({ timeout: 20000 });
         await page.waitForTimeout(3000);
-        console.log("7. PASS: Demo game popup appears to be fully loaded.");
+        verboseLog('Demo game popup appears to be fully loaded.');
     });
 
     // --- STEP 8: Recognize the close button and click it to close the popup ---
     // Action: Use page.click with the CloseButton selector.
-    await test.step('8. Close the demo game popup', async () => {
+    await runAuditedStep(page, projectName, '8. Close the demo game popup', async () => {
         await page.click(SELECTORS.CloseButton);
         // Assertion: Wait for the close button to become hidden, confirming the popup is dismissed
         await expect(page.locator(SELECTORS.CloseButton)).toBeHidden();
         await page.waitForTimeout(randomDelay(600, 1200));
-        console.log('8. Popup successfully closed.');
+        verboseLog('Popup successfully closed.');
     });
 
     // --- STEP 9: Go back page by page until the starting URL is reached ---.
-    await test.step('9. Navigate back to the starting URL (max 5 attempts)', async () => {
-        const normalizeUrl = (input: string) => {
-            const url = new URL(input);
-            url.hash = '';
-            url.search = '';
-            if (!url.pathname.endsWith('/')) {
-                url.pathname += '/';
-            }
-            return url.toString();
-        };
-
+    await runAuditedStep(page, projectName, '9. Navigate back to the starting URL (max 5 attempts)', async () => {
         const targetUrl = normalizeUrl(BASE_URL);
-        const maxAttempts = 5;
+        const maxAttempts = Math.max(BACK_STEPS, 5);
 
-        console.log(`9. Begin navigating back to ${targetUrl}`);
-
-        let reachedStart = false;
-        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            const currentUrl = normalizeUrl(page.url());
-            if (currentUrl.startsWith(targetUrl)) {
-                console.log(`9. Already at starting URL after ${attempt - 1} attempts.`);
-                reachedStart = true;
-                break;
-            }
-
-            await page.goBack().catch(() => null);
-            await page.waitForTimeout(750);
-
-            console.log(`9a. Navigated back attempt ${attempt}/${maxAttempts}. Current URL: ${page.url()}`);
-        }
-
-        if (!reachedStart) {
-            const normalizedCurrent = normalizeUrl(page.url());
-            if (!normalizedCurrent.startsWith(targetUrl)) {
-                console.warn('9. Max attempts reached, performing direct navigation as fallback.');
-                await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
-            }
-        }
+        verboseLog(`Begin navigating back to ${targetUrl}`);
+        await ensureReturnToStart(page, BASE_URL, maxAttempts);
 
         await expect(page).toHaveURL(new RegExp(`^${targetUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
-        console.log('9b. Successfully returned to the starting URL.');
+        verboseLog('Successfully returned to the starting URL.');
     });
 });

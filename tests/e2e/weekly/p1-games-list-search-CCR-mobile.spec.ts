@@ -1,4 +1,6 @@
 import { test, expect, devices, Page, Locator } from '@playwright/test';
+import * as fs from 'fs';
+import path from 'path';
 
 // --- DEVICE SETUP -----------------------------------------------------------
 const { defaultBrowserType: _ignored, ...iPhone13Descriptor } = devices['iPhone 13'];
@@ -17,6 +19,7 @@ const SEARCH_PHRASE = 'Sizzling Hot Deluxe';
 const SEARCH_SLUG = 'sizzling-hot-deluxe';
 const DEMO_WAIT_MS = { min: 3000, max: 4000 };
 const LOOP_GUARD_MS = 15000;
+const VERBOSE_LOGGING = false;
 
 const COOKIE_ACCEPT_SELECTOR = '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll';
 const COOKIE_CUSTOMIZE_SELECTOR = '#CybotCookiebotDialogBodyButtonCustomize';
@@ -27,9 +30,22 @@ const RESULTS_CONTAINER_SELECTOR = '.page_search_block + div';
 const SEARCH_INPUT_SELECTOR = 'form[action*="/sloturi/"] input[name="search"], input[name="search"]';
 const SLOT_TILE_SELECTOR = `${RESULTS_CONTAINER_SELECTOR} a[href*="/slot/"]`;
 const DEMO_CTA_SELECTOR = 'a.js-mobile-slot-trigger.slot_gray_btn, a.js-slot-trigger.slot_gray_btn';
+const CSV_FAILURE_DIR = path.join(process.cwd(), 'failures');
+const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-');
+const CSV_HEADER = 'Project,Step,Details,URL,Error Message\n';
 
 // --- HELPERS ----------------------------------------------------------------
 const randomDelay = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+const verboseLog = (...args: unknown[]) => {
+    if (VERBOSE_LOGGING) {
+        console.log(...args);
+    }
+};
+const verboseWarn = (...args: unknown[]) => {
+    if (VERBOSE_LOGGING) {
+        console.warn(...args);
+    }
+};
 
 type ClickOptions = {
     preferJsClick?: boolean;
@@ -54,18 +70,18 @@ const clickIfVisible = async (locator: Locator, label: string, options: ClickOpt
 
     if (options.preferJsClick) {
         await jsClick().catch((error) =>
-            console.warn(`[Popup] JS click failed for ${label}.`, error),
+            verboseWarn(`[Popup] JS click failed for ${label}.`, error),
         );
     } else {
         try {
             await target.click({ delay: randomDelay(40, 110) });
         } catch (error) {
-            console.warn(`[Popup] Standard click failed for ${label}. Falling back to JS click.`, error);
+            verboseWarn(`[Popup] Standard click failed for ${label}. Falling back to JS click.`, error);
             await jsClick();
         }
     }
     await target.page().waitForTimeout(randomDelay(150, 250));
-    console.log(`[Popup] Dismissed via ${label}`);
+    verboseLog(`[Popup] Dismissed via ${label}`);
     return true;
 };
 
@@ -105,7 +121,7 @@ const closeNewsletterIfPresent = async (page: Page) => {
     }
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
     await page.waitForTimeout(200);
-    return clickIfVisible(closeButton, 'newsletter close button', { preferJsClick: true });
+    await clickIfVisible(closeButton, 'newsletter close button', { preferJsClick: true });
 };
 
 const dismissBlockingUi = async (page: Page) => {
@@ -197,12 +213,12 @@ const ensureReturnToListPage = async (page: Page) => {
                 return;
             }
         } catch (error) {
-            console.warn(`[BackNav] attempt ${attempt} failed`, error);
+            verboseWarn(`[BackNav] attempt ${attempt} failed`, error);
         }
         await page.waitForTimeout(400);
     }
 
-    console.warn('[BackNav] Using direct navigation fallback to list page.');
+    verboseWarn('[BackNav] Using direct navigation fallback to list page.');
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle');
 };
@@ -221,7 +237,7 @@ const scrollSearchIntoView = async (page: Page) => {
 const waitForDemo = async (page: Page) => {
     const waitTime = randomDelay(DEMO_WAIT_MS.min, DEMO_WAIT_MS.max);
     await page.waitForTimeout(waitTime);
-    console.log(`[Demo] Waited ${waitTime}ms for demo load.`);
+    verboseLog(`[Demo] Waited ${waitTime}ms for demo load.`);
 };
 
 const ensureSearchReady = async (page: Page) => {
@@ -296,104 +312,180 @@ const withLoopGuard = async <T>(action: () => Promise<T>, label: string, timeout
     }
 };
 
-// --- TEST -------------------------------------------------------------------
-test('P1 Mobile: CCR slot search and demo smoke', async ({ page }) => {
+const csvEscape = (value: unknown) => {
+    if (value === null || value === undefined) return '""';
+    const str = String(value).replace(/"/g, '""').replace(/(\r\n|\n|\r)/gm, ' ');
+    return `"${str}"`;
+};
+
+const getCsvFilePath = (projectName: string) =>
+    path.join(CSV_FAILURE_DIR, `${projectName}_p1-games-list-search-CCR-mobile_${RUN_TIMESTAMP}.csv`);
+
+const ensureCsvInitialized = (projectName: string) => {
+    if (!fs.existsSync(CSV_FAILURE_DIR)) {
+        fs.mkdirSync(CSV_FAILURE_DIR, { recursive: true });
+    }
+    const csvPath = getCsvFilePath(projectName);
+    if (!fs.existsSync(csvPath)) {
+        fs.writeFileSync(csvPath, CSV_HEADER, { encoding: 'utf8' });
+    }
+    return csvPath;
+};
+
+const appendFailureRow = (projectName: string, csvRow: string) => {
+    const csvPath = ensureCsvInitialized(projectName);
+    fs.appendFileSync(csvPath, `${csvRow}\n`, { encoding: 'utf8' });
+};
+
+const logStepFailure = (projectName: string, stepName: string, details: string, page: Page, error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    let currentUrl = 'about:blank';
+    try {
+        currentUrl = page.url();
+    } catch {
+        // ignore
+    }
+    const csvRow = [
+        csvEscape(projectName),
+        csvEscape(stepName),
+        csvEscape(details),
+        csvEscape(currentUrl),
+        csvEscape(message),
+    ].join(',');
+    appendFailureRow(projectName, csvRow);
+    console.error(`[CSV][${projectName}] Step failure logged for "${stepName}": ${message}`);
+};
+
+const logStepStatus = (stepName: string, passed: boolean) => {
+    const prefix = passed ? '✅' : '❌';
+    console.log(`${prefix} ${stepName}`);
+};
+
+const runAuditedStep = async <T>(
+    page: Page,
+    projectName: string,
+    stepName: string,
+    action: () => Promise<T>,
+    loopLabel: string,
+) => {
     await withLoopGuard(
         async () => {
-            await test.step('1. Load slot list and clear blocking UI', async () => {
-                await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
-                await ensureSearchReady(page);
-                await page.waitForLoadState('networkidle');
-                console.log(`[Init] Loaded CCR list page ${page.url()}`);
+            await test.step(stepName, async () => {
+                try {
+                    await action();
+                    logStepStatus(stepName, true);
+                } catch (error) {
+                    logStepFailure(projectName, stepName, `Failed during ${stepName}`, page, error);
+                    logStepStatus(stepName, false);
+                    throw error;
+                }
             });
         },
-        'Step1_LoadBasePage',
+        loopLabel,
         LOOP_GUARD_MS,
+    );
+};
+
+// --- TEST -------------------------------------------------------------------
+test('P1 Mobile: CCR slot search and demo smoke', async ({ page }) => {
+    const projectName = test.info().project.name;
+
+    await runAuditedStep(
+        page,
+        projectName,
+        '1. Load slot list and clear blocking UI',
+        async () => {
+            await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+            await ensureSearchReady(page);
+            await page.waitForLoadState('networkidle');
+            console.log(`[Init] Loaded CCR list page ${page.url()}`);
+        },
+        'Step1_LoadBasePage',
     );
 
     let cachedResultTile: Locator | null = null;
 
-    await withLoopGuard(
+    await runAuditedStep(
+        page,
+        projectName,
+        '2. Search for target slot',
         async () => {
-            await test.step('2. Search for target slot', async () => {
-                const searchInput = page.locator(SEARCH_INPUT_SELECTOR).first();
-                await expect(searchInput).toBeVisible({ timeout: 15000 });
-                await ensureSearchReady(page);
-                await typeLikeHuman(searchInput, SEARCH_PHRASE);
-                await page.keyboard.press('Enter');
-                await waitForSearchResults(page);
-                await scrollResultsIntoView(page);
-                cachedResultTile = await getFirstResultTile(page);
-                await expect(cachedResultTile).toBeVisible({ timeout: 10000 });
-                await dismissBlockingUi(page);
-                console.log('[Search] Submitted and results should be visible.');
-            });
+            const searchInput = page.locator(SEARCH_INPUT_SELECTOR).first();
+            await expect(searchInput).toBeVisible({ timeout: 15000 });
+            await ensureSearchReady(page);
+            await typeLikeHuman(searchInput, SEARCH_PHRASE);
+            await page.keyboard.press('Enter');
+            await waitForSearchResults(page);
+            await scrollResultsIntoView(page);
+            cachedResultTile = await getFirstResultTile(page);
+            await expect(cachedResultTile).toBeVisible({ timeout: 10000 });
+            await dismissBlockingUi(page);
+            console.log('[Search] Submitted and results should be visible.');
         },
         'Step2_Search',
-        LOOP_GUARD_MS,
     );
 
-    await withLoopGuard(
+    await runAuditedStep(
+        page,
+        projectName,
+        '3. Open first slot result',
         async () => {
-            await test.step('3. Open first slot result', async () => {
-                const firstTile = cachedResultTile ?? (await getFirstResultTile(page));
-                await expect(firstTile).toBeVisible({ timeout: 10000 });
-                await ensureSlotTileClickable(firstTile, page);
-                await forceSameTabNavigation(firstTile);
+            const firstTile = cachedResultTile ?? (await getFirstResultTile(page));
+            await expect(firstTile).toBeVisible({ timeout: 10000 });
+            await ensureSlotTileClickable(firstTile, page);
+            await forceSameTabNavigation(firstTile);
 
-                const href = (await firstTile.getAttribute('href')) ?? 'unknown-slot';
+            const href = (await firstTile.getAttribute('href')) ?? 'unknown-slot';
 
-                let clickSucceeded = false;
-                try {
-                    await firstTile.click({ delay: randomDelay(70, 140), timeout: 5000 });
-                    clickSucceeded = true;
-                } catch (error) {
-                    console.warn('[Slot] Primary click failed, falling back to JS click.', error);
-                }
+            let clickSucceeded = false;
+            try {
+                await firstTile.click({ delay: randomDelay(70, 140), timeout: 5000 });
+                clickSucceeded = true;
+            } catch (error) {
+                verboseWarn('[Slot] Primary click failed, falling back to JS click.', error);
+            }
 
-                if (!clickSucceeded) {
-                    await firstTile.evaluate((node) => {
-                        if (node instanceof HTMLElement) {
-                            node.click();
-                        }
-                    });
-                }
+            if (!clickSucceeded) {
+                await firstTile.evaluate((node) => {
+                    if (node instanceof HTMLElement) {
+                        node.click();
+                    }
+                });
+            }
 
-                await page.waitForLoadState('domcontentloaded');
-                await page.waitForTimeout(800);
-                console.log(`[Slot] Navigated to slot page ${href}`);
+            await page.waitForLoadState('domcontentloaded');
+            await page.waitForTimeout(800);
+            verboseLog(`[Slot] Navigated to slot page ${href}`);
 
-                await dismissBlockingUi(page);
-            });
+            await dismissBlockingUi(page);
         },
         'Step3_OpenSlot',
-        LOOP_GUARD_MS,
     );
 
-    await withLoopGuard(
+    await runAuditedStep(
+        page,
+        projectName,
+        '4. Launch demo CTA',
         async () => {
-            await test.step('4. Launch demo CTA', async () => {
-                const demoButton = page.locator(DEMO_CTA_SELECTOR).filter({ hasText: /joac[aă]\s+gratis/i }).first();
-                await expect(demoButton).toBeVisible({ timeout: 15000 });
-                await demoButton.scrollIntoViewIfNeeded();
-                await demoButton.click({ delay: randomDelay(70, 150) });
-                await waitForDemo(page);
-            });
+            const demoButton = page.locator(DEMO_CTA_SELECTOR).filter({ hasText: /joac[aă]\s+gratis/i }).first();
+            await expect(demoButton).toBeVisible({ timeout: 15000 });
+            await demoButton.scrollIntoViewIfNeeded();
+            await demoButton.click({ delay: randomDelay(70, 150) });
+            await waitForDemo(page);
         },
         'Step4_LaunchDemo',
-        LOOP_GUARD_MS,
     );
 
-    await withLoopGuard(
+    await runAuditedStep(
+        page,
+        projectName,
+        '5. Return to slot list',
         async () => {
-            await test.step('5. Return to slot list', async () => {
-                await ensureReturnToListPage(page);
-                await expect(page).toHaveURL(new RegExp(`^${normalizeUrl(BASE_URL).replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}`));
-                await dismissBlockingUi(page);
-                console.log('[BackNav] Returned to base slot list.');
-            });
+            await ensureReturnToListPage(page);
+            await expect(page).toHaveURL(new RegExp(`^${normalizeUrl(BASE_URL).replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}`));
+            await dismissBlockingUi(page);
+            console.log('[BackNav] Returned to base slot list.');
         },
         'Step5_BackNav',
-        LOOP_GUARD_MS,
     );
 });
