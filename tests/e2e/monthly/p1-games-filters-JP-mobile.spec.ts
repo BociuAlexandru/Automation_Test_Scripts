@@ -1,4 +1,4 @@
-import { devices, expect, Locator, Page, test } from '@playwright/test';
+import { devices, expect, Frame, Locator, Page, test } from '@playwright/test';
 import * as fs from 'fs';
 import path from 'path';
 
@@ -28,7 +28,7 @@ const SELECTORS = {
         'button:has-text("Acceptă")',
         'button:has-text("Accept")',
     ],
-    NewsletterClose: '.wof-close.wof-close-icon',
+    NewsletterClose: 'div.wof-close.wof-close-icon',
     OfferClose: '.sticky-offer-close',
     ProviderDropdown: '.custom-select:has(#custom_filter_game_producers) .selected-item',
     ProviderOption1x2Gaming:
@@ -157,28 +157,47 @@ const tapOrClick = async (locator: Locator, timeout = 1000) => {
     }
 };
 
-const clickIfVisible = async (locator: Locator, timeout = 1000) => {
-    if ((await locator.count()) === 0) return false;
-    const isVisible = await locator.isVisible().catch(() => false);
-    if (!isVisible) return false;
-    await locator.scrollIntoViewIfNeeded().catch(() => null);
-    return tapOrClick(locator, timeout);
+const getInteractionScopes = (page: Page): (Page | Frame)[] => [page, ...page.frames()];
+
+const clickSelectorInScopes = async (page: Page, selector: string, timeout = 1000) => {
+    for (const scope of getInteractionScopes(page)) {
+        const target = scope.locator(selector).first();
+        if ((await target.count()) === 0) continue;
+        const visible = await target.isVisible().catch(() => false);
+        if (!visible) {
+            await target.waitFor({ state: 'visible', timeout: 500 }).catch(() => null);
+        }
+        if (await tapOrClick(target, timeout)) {
+            return true;
+        }
+    }
+    return false;
 };
 
-const dismissPopupIfPresent = async (page: Page, selector: string, attempts = 4) => {
-    const target = page.locator(selector).first();
+const isPageScope = (scope: Page | Frame): scope is Page => 'waitForTimeout' in scope;
+
+const waitInScope = async (scope: Page | Frame, durationMs: number) => {
+    if (isPageScope(scope)) {
+        await scope.waitForTimeout(durationMs);
+    } else {
+        await scope.page().waitForTimeout(durationMs);
+    }
+};
+
+const dismissPopupIfPresent = async (scope: Page | Frame, selector: string, attempts = 4) => {
+    const target = scope.locator(selector).first();
+    if ((await target.count()) === 0) {
+        return false;
+    }
+
     for (let attempt = 0; attempt < attempts; attempt += 1) {
-        if ((await target.count()) === 0) {
-            await page.waitForTimeout(200);
-            continue;
-        }
         await target.scrollIntoViewIfNeeded().catch(() => null);
         const isVisible = await target.isVisible().catch(() => false);
         if (!isVisible) {
             await target.waitFor({ state: 'visible', timeout: 500 }).catch(() => null);
         }
         if (await tapOrClick(target, 1000)) {
-            await page.waitForTimeout(150);
+            await waitInScope(scope, 100);
             return true;
         }
     }
@@ -186,17 +205,23 @@ const dismissPopupIfPresent = async (page: Page, selector: string, attempts = 4)
 };
 
 const acceptCookiesIfPresent = async (page: Page) => {
-    const allowAll = page.locator(SELECTORS.CookieAllowAll).first();
-    if (await clickIfVisible(allowAll, 5000)) return true;
-    for (const selector of SELECTORS.CookieAcceptButtons) {
-        const button = page.locator(selector).first();
-        if (await clickIfVisible(button, 2000)) return true;
+    const selectors = [SELECTORS.CookieAllowAll, ...SELECTORS.CookieAcceptButtons];
+    for (const selector of selectors) {
+        if (await clickSelectorInScopes(page, selector, 1500)) {
+            return true;
+        }
     }
     return false;
 };
 
 const closeNewsletterIfPresent = async (page: Page) => {
-    await dismissPopupIfPresent(page, SELECTORS.NewsletterClose);
+    const scopes: (Page | Frame)[] = [page, ...page.frames()];
+    for (const scope of scopes) {
+        if (await dismissPopupIfPresent(scope, SELECTORS.NewsletterClose)) {
+            return true;
+        }
+    }
+    return false;
 };
 
 const closeOfferPopupIfPresent = async (page: Page) => {
@@ -402,7 +427,7 @@ test.describe('P1 Monthly • JP • Games Filters & Pagination • Mobile', () 
 
         await runAuditedStep(page, projectName, 'Navigate to archive slot page and prepare UI', async () => {
             await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
-            await dismissInterferingPopups(page);
+            void dismissInterferingPopups(page);
             await scrollFiltersIntoView(page);
         });
 
@@ -414,6 +439,8 @@ test.describe('P1 Monthly • JP • Games Filters & Pagination • Mobile', () 
 
         await runAuditedStep(page, projectName, 'G4.2 Select 1x2 Gaming provider filter', async () => {
             await ensureFiltersReady(page);
+            const dropdown = getProviderDropdown(page);
+            await dropdown.click();
             const option = page.locator(SELECTORS.ProviderOption1x2Gaming).first();
             await option.waitFor({ state: 'visible', timeout: 10000 });
             await option.click();
