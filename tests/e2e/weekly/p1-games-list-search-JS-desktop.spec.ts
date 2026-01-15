@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import path from 'path';
 
 const BASE_URL = 'https://jocsloturi.ro/sloturi-online-gratis/';
+const SUPPORTED_PROJECTS = new Set(['jocsloturi']);
 const MAX_SLOTS_TO_TEST = 3;
 const VERBOSE_LOGGING = false;
 const CSV_FAILURE_DIR = path.join(process.cwd(), 'failures');
@@ -274,7 +275,12 @@ const forceSameTabNavigation = async (locator: Locator) => {
 };
 
 test('P1: Jocsloturi slot list demo smoke (desktop)', async ({ page }, testInfo) => {
-    const projectName = testInfo.project.name;
+    const currentProject = testInfo.project.name;
+    if (currentProject && !SUPPORTED_PROJECTS.has(currentProject)) {
+        test.skip(true, `JS desktop spec only runs for: ${Array.from(SUPPORTED_PROJECTS).join(', ')}`);
+        return;
+    }
+    const projectName = currentProject ?? 'p1-games-list-search-JS-desktop';
 
     await runAuditedStep(page, projectName, '1. Navigate to the slot list page', async () => {
         await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });

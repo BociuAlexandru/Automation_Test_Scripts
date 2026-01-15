@@ -16,6 +16,7 @@ test.use({
 
 // --- CONSTANTS --------------------------------------------------------------
 const BASE_URL = 'https://jocsloturi.ro/sloturi-online-gratis/';
+const SUPPORTED_PROJECTS = new Set(['jocsloturi']);
 const MAX_SLOTS_TO_TEST = 3;
 const VERBOSE_LOGGING = false;
 const CSV_FAILURE_DIR = path.join(process.cwd(), 'failures');
@@ -301,7 +302,12 @@ const runAuditedStep = async (
 
 // --- TEST -------------------------------------------------------------------
 test('P1 Mobile: Jocsloturi slot list demo smoke', async ({ page }, testInfo) => {
-    const projectName = testInfo.project.name;
+    const currentProject = testInfo.project.name;
+    if (currentProject && !SUPPORTED_PROJECTS.has(currentProject)) {
+        test.skip(true, `JS mobile spec only runs for: ${Array.from(SUPPORTED_PROJECTS).join(', ')}`);
+        return;
+    }
+    const projectName = currentProject ?? 'p1-games-list-search-JS-mobile';
 
     await runAuditedStep(page, projectName, '1. Load slot list and dismiss blocking UI', async () => {
         await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });

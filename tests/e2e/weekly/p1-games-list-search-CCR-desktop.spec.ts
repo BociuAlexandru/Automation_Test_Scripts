@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import path from 'path';
 
 const BASE_URL = 'https://casino.com.ro/sloturi/';
+const SUPPORTED_PROJECTS = new Set(['casino.com.ro']);
 const SEARCH_PHRASE = 'Sizzling Hot Deluxe';
 const HUMAN_TYPE_DELAY = { min: 70, max: 160 };
 const HUMAN_DELAY = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -142,8 +143,13 @@ const ensureReturnedToList = async (page: Page) => {
     }
 };
 
-test('P1: CCR slot search and demo smoke (desktop)', async ({ page }) => {
-    const projectName = test.info().project.name;
+test('P1: CCR slot search and demo smoke (desktop)', async ({ page }, testInfo) => {
+    const currentProject = testInfo.project.name;
+    if (currentProject && !SUPPORTED_PROJECTS.has(currentProject)) {
+        test.skip(true, `CCR desktop spec only runs for: ${Array.from(SUPPORTED_PROJECTS).join(', ')}`);
+        return;
+    }
+    const projectName = currentProject ?? 'p1-games-list-search-CCR-desktop';
 
     await runAuditedStep(page, projectName, '1. Navigate to slot list page', async () => {
         await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });

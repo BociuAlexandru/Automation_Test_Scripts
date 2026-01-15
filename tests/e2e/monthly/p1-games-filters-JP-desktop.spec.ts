@@ -8,6 +8,7 @@ type SlotDetail = {
 };
 
 const BASE_URL = 'https://jocpacanele.ro/jocuri-pacanele/';
+const SUPPORTED_PROJECTS = new Set(['jocpacanele']);
 
 const SELECTORS = {
     CookieAllowAll: '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
@@ -274,7 +275,13 @@ const getProviderDropdown = (page: Page) => page.locator(SELECTORS.ProviderDropd
 
 test.describe('P1 Monthly • JP • Games Filters & Pagination', () => {
     test('Combined flow placeholder with implemented G4 provider filter', async ({ page }, testInfo) => {
-        const projectName = testInfo.project.name ?? 'p1-games-filters-JP-desktop';
+        const currentProject = testInfo.project.name;
+        if (currentProject && !SUPPORTED_PROJECTS.has(currentProject)) {
+            test.skip(true, `JP filters spec only runs for: ${Array.from(SUPPORTED_PROJECTS).join(', ')}`);
+            return;
+        }
+
+        const projectName = currentProject ?? 'p1-games-filters-JP-desktop';
 
         await runAuditedStep(page, projectName, 'Navigate to archive slot page and prepare UI', async () => {
             await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });

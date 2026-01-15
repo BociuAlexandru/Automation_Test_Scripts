@@ -15,6 +15,7 @@ test.use({
 
 // --- CONSTANTS --------------------------------------------------------------
 const BASE_URL = 'https://casino.com.ro/sloturi/';
+const SUPPORTED_PROJECTS = new Set(['casino.com.ro']);
 const SEARCH_PHRASE = 'Sizzling Hot Deluxe';
 const SEARCH_SLUG = 'sizzling-hot-deluxe';
 const DEMO_WAIT_MS = { min: 3000, max: 4000 };
@@ -387,8 +388,13 @@ const runAuditedStep = async <T>(
 };
 
 // --- TEST -------------------------------------------------------------------
-test('P1 Mobile: CCR slot search and demo smoke', async ({ page }) => {
-    const projectName = test.info().project.name;
+test('P1 Mobile: CCR slot search and demo smoke', async ({ page }, testInfo) => {
+    const currentProject = testInfo.project.name;
+    if (currentProject && !SUPPORTED_PROJECTS.has(currentProject)) {
+        test.skip(true, `CCR mobile spec only runs for: ${Array.from(SUPPORTED_PROJECTS).join(', ')}`);
+        return;
+    }
+    const projectName = currentProject ?? 'p1-games-list-search-CCR-mobile';
 
     await runAuditedStep(
         page,

@@ -15,6 +15,8 @@ test.use({
 
 // --- CONSTANTS --------------------------------------------------------------
 const BASE_URL = 'https://www.supercazino.ro/sloturi-gratis/';
+const SUPPORTED_PROJECTS = new Set(['supercazino']);
+
 const SEARCH_PHRASE = 'Sizzling Hot Deluxe';
 const VERBOSE_LOGGING = false;
 const CSV_FAILURE_DIR = path.join(process.cwd(), 'failures');
@@ -227,7 +229,12 @@ const runAuditedStep = async (
 
 // --- TEST -------------------------------------------------------------------
 test('P1 Mobile: SC slot search and demo flow', async ({ page }, testInfo) => {
-    const projectName = testInfo.project.name;
+    const currentProject = testInfo.project.name;
+    if (currentProject && !SUPPORTED_PROJECTS.has(currentProject)) {
+        test.skip(true, `SC mobile spec only runs for: ${Array.from(SUPPORTED_PROJECTS).join(', ')}`);
+        return;
+    }
+    const projectName = currentProject ?? 'p1-games-list-search-SC-mobile';
 
     // Step 1: Load initial URL
     await runAuditedStep(page, projectName, '1. Load SC slot list', async () => {

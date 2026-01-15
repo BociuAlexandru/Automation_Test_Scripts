@@ -8,6 +8,7 @@ type SlotDetail = {
 };
 
 const { defaultBrowserType: _ignored, ...iPhone13Descriptor } = devices['iPhone 13'];
+const SUPPORTED_PROJECTS = new Set(['jocpacanele']);
 
 test.use({
     ...iPhone13Descriptor,
@@ -422,8 +423,16 @@ const scrollFiltersIntoView = async (page: Page) => {
 };
 
 test.describe('P1 Monthly • JP • Games Filters & Pagination • Mobile', () => {
-    test('Runs G4–G7 flow on iPhone 13 viewport', async ({ page }, testInfo) => {
-        const projectName = testInfo.project.name ?? 'p1-games-filters-JP-mobile';
+    test('Combined flow placeholder with implemented G4 provider filter', async ({ page }, testInfo) => {
+        const documentTitle = 'P1 Monthly • JP Mobile • Games Filters & Pagination';
+        const currentProject = testInfo.project.name;
+
+        if (currentProject && !SUPPORTED_PROJECTS.has(currentProject)) {
+            test.skip(true, `JP filters mobile spec only runs for: ${Array.from(SUPPORTED_PROJECTS).join(', ')}`);
+            return;
+        }
+
+        const projectName = currentProject ?? documentTitle;
 
         await runAuditedStep(page, projectName, 'Navigate to archive slot page and prepare UI', async () => {
             await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
