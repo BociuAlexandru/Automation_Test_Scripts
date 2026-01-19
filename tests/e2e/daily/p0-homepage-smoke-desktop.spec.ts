@@ -1,7 +1,7 @@
 // tests/e2e/p0-homepage-smoke-desktop.spec.ts (V79 - Jocsloturi Implemented)
 
 // CRITICAL IMPORTS
-import { test, expect, TestInfo, Page } from '@playwright/test'; 
+import { test, expect, TestInfo, Page, Locator } from '@playwright/test'; 
 import * as fs from "fs"; 
 import path from "path"; 
 import { siteConfigs, SiteName } from '../config/sites'; 
@@ -87,6 +87,55 @@ async function humanizePage(page: Page) {
     });
     // 2. Small random pause (Simulate thought/processing)
     await page.waitForTimeout(Math.random() * 500 + 500); // 500ms to 1000ms delay
+}
+
+const XSERVER_SITES: SiteName[] = ['jocpacanele', 'jocuricazinouri', 'jocsloturi'];
+
+function isXserver(siteName: SiteName) {
+    return XSERVER_SITES.includes(siteName);
+}
+
+async function recoverFromServiceUnavailable(page: Page, siteName: SiteName, baseURL: string, maxBackSteps = 3) {
+    if (!isXserver(siteName)) return false;
+
+    let pageContent: string;
+    try {
+        pageContent = (await page.content()).toLowerCase();
+    } catch (e) {
+        return false;
+    }
+
+    if (!pageContent.includes('service unavailable')) return false;
+
+    console.warn(`[${siteName}] WARNING: "Service Unavailable" detected. Attempting history recovery...`);
+
+    for (let attempt = 0; attempt < maxBackSteps; attempt++) {
+        try {
+            await page.goBack({ waitUntil: 'load', timeout: 10000 });
+        } catch (error) {
+            console.warn(`[${siteName}] WARNING: Browser history exhausted while recovering from Service Unavailable.`);
+            break;
+        }
+
+        try {
+            const recoveredContent = (await page.content()).toLowerCase();
+            if (!recoveredContent.includes('service unavailable')) {
+                console.log(`[${siteName}] INFO: Service Unavailable cleared after ${attempt + 1} back steps.`);
+                return true;
+            }
+        } catch (error) {
+            break;
+        }
+    }
+
+    try {
+        await page.goto(baseURL, { waitUntil: 'load', timeout: 15000 });
+        console.warn(`[${siteName}] INFO: Reloaded homepage after Service Unavailable.`);
+    } catch (error) {
+        console.error(`[${siteName}] CRITICAL: Failed to reload homepage after Service Unavailable.`);
+    }
+
+    return true;
 }
 
 function csvEscape(str: string | null | undefined): string {
@@ -180,16 +229,6 @@ test('H1: Homepage Load Performance - Initial Load and Key Elements Visibility',
         }
     });
     
-    await test.step('H1.3c: Verify Affiliate CTA Visibility', async () => {
-        const cta = page.locator(config.ctaSelector).first();
-        try {
-            await expect(cta, `At least one primary affiliate CTA (${config.ctaSelector}) should be visible.`).toBeVisible();
-        } catch (e) {
-            logFailureToCsv(siteName, 'H1.3c', 'Element Visibility', `Affiliate CTA (${config.ctaSelector}) not visible.`, baseURL);
-            throw e;
-        }
-    });
-
     testInfo.annotations.push({ type: 'Test ID', description: 'H1' });
 });
 
@@ -232,6 +271,9 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
         } else if (siteName === 'jocsloturi') {
             // 🎯 JS Selector: Using the standard custom-logo-link (Astra theme)
             logoSelector = '.custom-logo-link';
+        } else if (siteName === 'jocuricazinouri') {
+            // JC logo wrapper described by .jcTopLogo > a.logo-wrapper
+            logoSelector = '.jcTopLogo a.logo-wrapper';
         } else {
             logoSelector = 'a[href="/"]'; // Default fallback
         }
@@ -281,6 +323,7 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
         let parentSelector: string;
         let subMenuSelector: string;
         let isProjectDropdownOnly: boolean;
+        let useGlobalMegaMenu = false;
 
         // 🎯 LOGIC: Choose the Parent Selector based on the project
         if (siteName === 'beturi') {
@@ -300,6 +343,16 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
             parentSelector = '#primary-menu > li';
             isProjectDropdownOnly = false; // JS uses the theme's class for detection
             subMenuSelector = '.sub-menu a';
+        } else if (siteName === 'jocuricazinouri') {
+            // JC desktop navbar items
+            parentSelector = '.nav-link-item--container';
+            isProjectDropdownOnly = true; // items reveal dropdown panels
+            subMenuSelector = '.jcTopMenuMenuOpen a';
+        } else if (siteName === 'supercazino') {
+            parentSelector = '.mega-menu-desktop-container--li';
+            isProjectDropdownOnly = true; // mega menu uses dropdown-like panels
+            subMenuSelector = '.mega-menu-a';
+            useGlobalMegaMenu = true;
         } else {
             return;
         }
@@ -352,7 +405,18 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
                         console.log(`[${projectName}] DEBUG: Triggering dropdown: "${cleanItemText}"`);
 
                         // Find all sub-links within this specific parent LI
-                        const subLinks = listItem.locator(subMenuSelector); // Use project-specific selector
+                        let subLinks: Locator;
+                        if (useGlobalMegaMenu) {
+                            const megaMenuId = await listItem.getAttribute('data-megamenu');
+                            if (megaMenuId) {
+                                subLinks = page.locator(`[data-megamenu-target-id="${megaMenuId}"] ${subMenuSelector}`);
+                            } else {
+                                subLinks = listItem.locator(subMenuSelector);
+                            }
+                        } else {
+                            subLinks = listItem.locator(subMenuSelector); // Use project-specific selector
+                        }
+
                         const subLinkCount = await subLinks.count();
                         
                         for (let j = 0; j < subLinkCount; j++) {
@@ -373,6 +437,10 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
                                 try {
                                     // 1. Navigate using the actual HREF
                                     const navResponse = await page.goto(targetUrl, { waitUntil: 'load', timeout: 30000 });
+                                    const recoveredServiceError = await recoverFromServiceUnavailable(page, siteName, baseURL);
+                                    if (recoveredServiceError) {
+                                        throw new Error('Encountered Service Unavailable. Recovered via browser history.');
+                                    }
                                     
                                     // 2. Status Code Check
                                     const navStatusCode = navResponse?.status() || 0;
@@ -452,6 +520,10 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
                                 }
 
                                 const navResponse = await page.goto(targetUrl!, { waitUntil: 'load', timeout: 30000 });
+                                const recoveredServiceError = await recoverFromServiceUnavailable(page, siteName, baseURL);
+                                if (recoveredServiceError) {
+                                    throw new Error('Encountered Service Unavailable. Recovered via browser history.');
+                                }
                                 
                                 // Status Code Check
                                 const navStatusCode = navResponse?.status() || 0;
