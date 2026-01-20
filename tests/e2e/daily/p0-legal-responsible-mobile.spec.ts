@@ -1,4 +1,5 @@
 // tests/e2e/p0-legal-responsible.spec.ts (Final Clean Code)
+// Mobile-optimized legal/responsible footer validation using iPhone 13 emulation and CSV logging.
 
 // -------------------------------------------------------------------------
 // 🚀 SECTION 1: IMPORTS AND CONFIGURATION

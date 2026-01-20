@@ -1,4 +1,5 @@
 // tests/e2e/p0-legal-responsible.spec.ts (Final Clean Code)
+// Desktop compliance suite that crawls footer legal/responsible links per site and verifies HTTP health/logging.
 
 // -------------------------------------------------------------------------
 // 🚀 SECTION 1: IMPORTS AND CONFIGURATION
