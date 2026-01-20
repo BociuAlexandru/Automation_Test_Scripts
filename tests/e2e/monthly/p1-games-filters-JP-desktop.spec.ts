@@ -8,7 +8,7 @@ type SlotDetail = {
 };
 
 const BASE_URL = 'https://jocpacanele.ro/jocuri-pacanele/';
-const SUPPORTED_PROJECTS = new Set(['jocpacanele']);
+const SUPPORTED_PROJECTS = new Set(['jocpacanele']); // Filters currently target only JP
 
 const SELECTORS = {
     CookieAllowAll: '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
@@ -38,9 +38,9 @@ const SELECTORS = {
     SlotCategoryLabel: '.single__table__left-col',
 };
 
-const EXPECTED_PROVIDER = '1x2 gaming';
-const EXPECTED_SLOT_TYPE = 'Păcănele cu fructe';
-const WAIT_AFTER_FILTER_MS = 2500;
+const EXPECTED_PROVIDER = '1x2 gaming'; // Used when verifying provider filter results
+const EXPECTED_SLOT_TYPE = 'Păcănele cu fructe'; // Used when validating slot type filters
+const WAIT_AFTER_FILTER_MS = 2500; // Extra cushion for async filter UI updates
 const VERBOSE_LOGGING = false;
 const CSV_FAILURE_DIR = path.join(process.cwd(), 'failures');
 const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-');
@@ -52,6 +52,7 @@ const normalizeProviderText = (value: string) =>
 
 const normalizeSlotTypeText = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase();
 
+// Optional verbose logging for local debug runs
 const verboseLog = (...args: unknown[]) => {
     if (VERBOSE_LOGGING) {
         console.log(...args);
@@ -75,6 +76,7 @@ const csvEscape = (value: unknown) => {
     return stringValue;
 };
 
+// CSV helpers mirror other suites but include sanitized project names (desktop only).
 const getCsvFilePath = (projectName: string) => {
     const safeName = projectName.replace(/[^\w.-]+/g, '_');
     return path.join(CSV_FAILURE_DIR, `${safeName}_p1-games-filters-JP-desktop_${RUN_TIMESTAMP}.csv`);
@@ -273,6 +275,7 @@ const verifySlotTypeForDetails = async (
 
 const getProviderDropdown = (page: Page) => page.locator(SELECTORS.ProviderDropdown).first();
 
+// --- MAIN TEST SUITE --------------------------------------------------------
 test.describe('P1 Monthly • JP • Games Filters & Pagination', () => {
     test('Combined flow placeholder with implemented G4 provider filter', async ({ page }, testInfo) => {
         const currentProject = testInfo.project.name;

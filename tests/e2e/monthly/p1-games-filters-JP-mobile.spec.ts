@@ -7,6 +7,7 @@ type SlotDetail = {
     href: string;
 };
 
+// iPhone 13 profile to mimic mobile user flows.
 const { defaultBrowserType: _ignored, ...iPhone13Descriptor } = devices['iPhone 13'];
 const SUPPORTED_PROJECTS = new Set(['jocpacanele']);
 
@@ -74,6 +75,7 @@ const verboseWarn = (...args: unknown[]) => {
     }
 };
 
+// CSV helpers mirror desktop spec but sanitize project names for per-run artifacts.
 const csvEscape = (value: unknown) => {
     if (value === null || value === undefined) {
         return '""';
@@ -422,17 +424,17 @@ const scrollFiltersIntoView = async (page: Page) => {
     await page.waitForTimeout(400);
 };
 
-test.describe('P1 Monthly • JP • Games Filters & Pagination • Mobile', () => {
-    test('Combined flow placeholder with implemented G4 provider filter', async ({ page }, testInfo) => {
-        const documentTitle = 'P1 Monthly • JP Mobile • Games Filters & Pagination';
-        const currentProject = testInfo.project.name;
 
+// --- MAIN TEST SUITE --------------------------------------------------------
+test.describe('P1 Monthly • JP • Games Filters & Pagination', () => {
+    test('Combined flow placeholder with implemented G4 provider filter', async ({ page }, testInfo) => {
+        const currentProject = testInfo.project.name;
         if (currentProject && !SUPPORTED_PROJECTS.has(currentProject)) {
-            test.skip(true, `JP filters mobile spec only runs for: ${Array.from(SUPPORTED_PROJECTS).join(', ')}`);
+            test.skip(true, `JP filters spec only runs for: ${Array.from(SUPPORTED_PROJECTS).join(', ')}`);
             return;
         }
 
-        const projectName = currentProject ?? documentTitle;
+        const projectName = currentProject ?? 'p1-games-filters-JP-mobile';
 
         await runAuditedStep(page, projectName, 'Navigate to archive slot page and prepare UI', async () => {
             await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
