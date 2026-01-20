@@ -3,6 +3,7 @@ import { test, devices, type Response } from "@playwright/test";
 import { siteConfigs, type SiteName } from "../config/sites";
 import * as fs from "fs"; 
 import path from "path";
+// Core Playwright APIs plus per-site config and Node helpers (fs/path) power the auditing workflow.
 
 // ✅ Force iPhone 13 device context for this mobile audit
 const { defaultBrowserType: _ignored, ...iPhone13Descriptor } = devices["iPhone 13"];
@@ -29,18 +30,21 @@ const REDIRECT_TIMEOUT = 15000; // 15 seconds for robust redirect monitoring
 const CSV_FAILURE_FOLDER = path.join(process.cwd(), "failures");
 const CSV_HEADER = 'Project,Source Page,CTA Text,Issue Type,Details,Failing URL\n';
 const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-');
+// Timestamp suffix differentiates CSV filenames for every execution.
 
 // Function to safely escape strings for CSV
 function csvEscape(str: string | null | undefined) {
     if (str === null || str === undefined) return '""';
     return `"${String(str).replace(/"/g, '""').replace(/(\r\n|\n|\r)/gm, ' ')}"`;
 }
+// Normalizes dynamic error text so Excel-friendly CSV rows stay intact.
 
 // ➡️ DEFINITIVE FIX: humanDelay function (Accepts mandatory arguments to resolve conflict)
 async function humanDelay(page: any, minMs: number = 500, maxMs: number = 2000): Promise<void> {
     const delay = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
     await page.waitForTimeout(delay);
 }
+// Adds realistic pauses between actions to keep anti-bot systems calm.
 
 // ➡️ ANTI-DETECTION: Remove webdriver detection scripts
 async function removeWebdriverDetection(page: any) {
@@ -78,7 +82,7 @@ async function closeModalOrPopup(page: any) {
 
 
 test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser }, testInfo) => { 
-  
+    // Mobile counterpart to the desktop audit, executed in an iPhone 13 emulation context.
     // ⚠️ NOTE: Removed console.log(dateTime) and process.exit(0)
     test.setTimeout(120 * 60 * 1000); 
 
@@ -95,9 +99,11 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser }, t
     const appendCsvRow = (row: string) => {
         fs.appendFileSync(csvFilePath, row + '\n', { encoding: 'utf8' });
     };
+    // Prepare CSV logging utilities so every failure is recorded immediately.
     
     console.log(`[${projectName}] Starting redirect chain audit.`);
     const cfg = siteConfigs[projectName];
+    // Pull highTrafficPaths + affiliate regex specific to the current site.
     
     const projectBaseURL = testInfo.project.use.baseURL; 
     if (!projectBaseURL) { throw new Error(`Base URL not found for project: ${projectName}`); }
@@ -117,6 +123,7 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser }, t
     const locale = mobileContextOptions.locale;
     const timezoneId = mobileContextOptions.timezoneId;
     const permissions = mobileContextOptions.permissions;
+    // Snapshot the context options once so every new context is identical (viewport, UA, locale, etc.).
     
     for (const currentPath of cfg.highTrafficPaths) {
         // Check if the current page should be entirely skipped (e.g., if it's in sites.ts skippedPaths)
@@ -135,6 +142,7 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser }, t
                 await context.close();
             }
         };
+        // Use a fresh context per path to avoid state/popup carryover and ensure isolation.
 
         await test.step(`Audit Page: ${currentPath}`, async () => {
             let pageElementCount = 0; 
@@ -158,6 +166,7 @@ test("P0 - High Traffic CTA Audit (Redirect Chain Check)", async ({ browser }, t
 
             await closeModalOrPopup(auditPage); 
             await humanDelay(auditPage, 500, 1000); 
+            // Post-load hygiene: remove popups, then pause briefly before scraping.
 
             // 2. ➡️ LINK SCRAPING: Find ALL links and filter by URL pattern
             const allLinks = auditPage.locator("a[href]");

@@ -40,7 +40,7 @@ function stripDiacritics(text: string): string {
     return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
-// 🎯 NEW HELPER: Splits words based on case change and separates numbers/letters
+// NEW HELPER: Splits words based on case change and separates numbers/letters
 function splitCamelCaseAndNumbers(text: string): string[] {
     // 1. Insert space where lowercase is followed by uppercase (e.g., LuckySeven -> Lucky Seven)
     let cleanedText = text
@@ -133,6 +133,36 @@ async function recoverFromServiceUnavailable(page: Page, siteName: SiteName, bas
         console.warn(`[${siteName}] INFO: Reloaded homepage after Service Unavailable.`);
     } catch (error) {
         console.error(`[${siteName}] CRITICAL: Failed to reload homepage after Service Unavailable.`);
+    }
+
+    return true;
+}
+
+async function recoverFromServiceUnavailableH1(
+    page: Page,
+    siteName: SiteName,
+    baseURL: string,
+    failingUrl: string,
+    h1Text: string,
+): Promise<boolean> {
+    if (!isXserver(siteName)) return false;
+
+    const normalizedH1 = stripDiacritics(h1Text).toLowerCase();
+    if (!normalizedH1.includes('service unavailable')) return false;
+
+    console.warn(`[${siteName}] WARNING: Service Unavailable H1 detected at ${failingUrl}. Attempting automatic recovery.`);
+
+    try {
+        await page.goBack({ waitUntil: 'load', timeout: 15000 });
+        console.warn(`[${siteName}] INFO: Navigated back after Service Unavailable H1.`);
+    } catch (error) {
+        console.error(`[${siteName}] ERROR: Failed to go back after Service Unavailable H1. Reloading homepage as fallback.`);
+        try {
+            await page.goto(baseURL, { waitUntil: 'load', timeout: 15000 });
+            console.warn(`[${siteName}] INFO: Reloaded homepage after Service Unavailable H1.`);
+        } catch (reloadError) {
+            console.error(`[${siteName}] CRITICAL: Failed to reload homepage after Service Unavailable H1.`);
+        }
     }
 
     return true;
@@ -260,7 +290,7 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
         
         console.log(`[${siteName}] DEBUG: Testing logo click from: ${baseURL}`);
 
-        // 🎯 LOGIC: Choose the Logo Selector based on the project
+        // LOGIC: Choose the Logo Selector based on the project
         let logoSelector: string;
         if (siteName === 'beturi') {
             logoSelector = '.custom-logo-link';
@@ -269,7 +299,7 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
         } else if (siteName === 'jocpacanele') {
             logoSelector = '.d-none.d-lg-block.logo-container > a'; 
         } else if (siteName === 'jocsloturi') {
-            // 🎯 JS Selector: Using the standard custom-logo-link (Astra theme)
+            // JS Selector: Using the standard custom-logo-link (Astra theme)
             logoSelector = '.custom-logo-link';
         } else if (siteName === 'jocuricazinouri') {
             // JC logo wrapper described by .jcTopLogo > a.logo-wrapper
@@ -325,7 +355,7 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
         let isProjectDropdownOnly: boolean;
         let useGlobalMegaMenu = false;
 
-        // 🎯 LOGIC: Choose the Parent Selector based on the project
+        // LOGIC: Choose the Parent Selector based on the project
         if (siteName === 'beturi') {
             parentSelector = '#menu-main-menu > li';
             isProjectDropdownOnly = false; // Beturi uses mixed direct/dropdown links
@@ -339,7 +369,7 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
             isProjectDropdownOnly = true; // All top items are dropdown triggers
             subMenuSelector = '.dropdown-menu a';
         } else if (siteName === 'jocsloturi') {
-            // 🎯 JS Selectors
+            // JS Selectors
             parentSelector = '#primary-menu > li';
             isProjectDropdownOnly = false; // JS uses the theme's class for detection
             subMenuSelector = '.sub-menu a';
@@ -369,7 +399,7 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
             const rawItemText = await parentLink.textContent() || '';
             const cleanItemText = rawItemText.replace(/(\r\n|\n|\r|\s+)/gm, ' ').trim();
 
-            // 🎯 CHECK: Guaranteed detection of menu item type
+            // LOGIC: Guaranteed detection of menu item type
             const listItemClass = await listItem.getAttribute('class') || '';
             
             // Determine if it's a dropdown: If the project forces it, OR it has the class.
@@ -428,7 +458,7 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
                             // Clean sub-menu text (e.g., "Campionii Craciunului")
                             const cleanSubText = subMenuText.replace(/(\r\n|\n|\r|\s+)/gm, ' ').trim();
                             
-                            // 🎯 FIX: Smart URL Construction
+                            // LOGIC: Smart URL Construction
                             targetUrl = (subLinkHref && subLinkHref.startsWith('/')) 
                                 ? (baseURL + subLinkHref) 
                                 : subLinkHref || '';
@@ -456,23 +486,35 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
                                     if (h1Exists) {
                                         const h1Text = (await h1Locator.textContent())?.trim() || '';
                                         
-                                        // 🎯 Assertion: Use the new flexible word inclusion check
+                                        // LOGIC: Check for Service Unavailable H1
+                                        const recoveredByH1 = await recoverFromServiceUnavailableH1(page, siteName, baseURL, targetUrl, h1Text);
+                                        if (recoveredByH1) {
+                                            const errorMsg = `Service Unavailable detected via H1 while visiting ${targetUrl}.`;
+                                            logFailureToCsv(siteName, 'H2.2 - Sublink H1', 'Service Unavailable Recovery', errorMsg, targetUrl);
+                                            stepFailed = true;
+                                            await page.goto(baseURL, { waitUntil: 'load', timeout: 10000 }).catch(() => {
+                                                console.warn(`[${siteName}] CRITICAL WARNING: Failed to reset page after Service Unavailable recovery.`);
+                                            });
+                                            return;
+                                        }
+
+                                        // LOGIC: Assertion: Use the new flexible word inclusion check
                                         if (!checkH1Content(validationText, h1Text)) {
                                             // Soft failure: Log the assertion error but DO NOT throw
                                             const errorMsg = `H1 ("${h1Text}") does not contain significant words from menu text ("${validationText}").`;
                                             logFailureToCsv(siteName, `H2.2 - Sublink H1`, 'H1 Content Mismatch', errorMsg, targetUrl);
-                                            // 🎯 FIX: Include H1 in terminal output
+                                            // LOGIC: FIX: Include H1 in terminal output
                                             console.error(`[${siteName}] ❌ FAILED: Sub-link "${cleanSubText}" failed validation against H1: ${h1Text}`);
                                             stepFailed = true;
                                         } else {
-                                            // 🎯 FIX: Include H1 in terminal output
+                                            // LOGIC: FIX: Include H1 in terminal output
                                             console.log(`[${siteName}] ✅ PASSED: Sub-link "${cleanSubText}" validated against H1: ${h1Text}`);
                                         }
                                     } else {
                                         // EDGE CASE: H1 is missing entirely
                                         const errorMsg = `No <h1> element found on page. Expected: ${validationText}.`;
-                                        logFailureToCsv(siteName, `H2.2 - Sublink H1`, 'Missing H1 Element', errorMsg, targetUrl);
-                                        // 🎯 FIX: Include failure in terminal output
+                                        logFailureToCsv(siteName, 'H2.2 - Sublink H1', 'Missing H1 Element', errorMsg, targetUrl);
+                                        // LOGIC: FIX: Include failure in terminal output
                                         console.error(`[${siteName}] ❌ FAILED: Sub-link "${cleanSubText}" failed H1 validation (Missing H1).`);
                                         stepFailed = true;
                                     }
@@ -505,7 +547,7 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
                         // --- Direct Link Logic (Rule 2) ---
                         const linkHref = await parentLink.getAttribute('href');
                         
-                        // 🎯 FIX: Smart URL Construction
+                        // LOGIC: Smart URL Construction
                         targetUrl = (linkHref && linkHref.startsWith('/')) 
                             ? (baseURL + linkHref) 
                             : linkHref || '';
@@ -513,7 +555,7 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
 
                         await test.step(`Direct Link Check: [${cleanItemText}]`, async () => {
                             try {
-                                // 🎯 CHECK: If the link is just a placeholder (common for non-dropdowns that don't need linking)
+                                // LOGIC: Check if the link is just a placeholder (common for non-dropdowns that don't need linking)
                                 if (targetUrl === '#' || targetUrl === baseURL + '#' || targetUrl === baseURL + '/') { 
                                     console.warn(`[${siteName}] ⚠️ WARN: Direct link "${cleanItemText}" is a placeholder (#) or base link (/) and skipped H1 check.`);
                                     return;
@@ -541,12 +583,24 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
                                 if (h1Exists) {
                                     h1Text = (await h1Locator.textContent())?.trim() || '';
                                     
-                                    // 🎯 Assertion: Use the new flexible word inclusion check
+                                    // LOGIC: Check for Service Unavailable H1
+                                    const recoveredByH1 = await recoverFromServiceUnavailableH1(page, siteName, baseURL, targetUrl!, h1Text);
+                                    if (recoveredByH1) {
+                                        const errorMsg = `Service Unavailable detected via H1 while visiting ${targetUrl}.`;
+                                        logFailureToCsv(siteName, 'H2.2 - Direct Link H1', 'Service Unavailable Recovery', errorMsg, targetUrl!);
+                                        stepFailed = true;
+                                        await page.goto(baseURL, { waitUntil: 'load', timeout: 10000 }).catch(() => {
+                                            console.warn(`[${siteName}] CRITICAL WARNING: Failed to reset page after Service Unavailable recovery.`);
+                                        });
+                                        return;
+                                    }
+
+                                    // LOGIC: Assertion: Use the new flexible word inclusion check
                                     if (!checkH1Content(cleanItemText, h1Text)) {
                                         // Soft failure: Log the assertion error but DO NOT throw
                                         const errorMsg = `H1 ("${h1Text}") does not contain significant words from menu text ("${cleanItemText}").`;
                                         logFailureToCsv(siteName, 'H2.2 - Direct Link H1', 'H1 Content Mismatch', errorMsg, targetUrl!);
-                                        // 🎯 FIX: Include H1 in terminal output
+                                        // LOGIC: FIX: Include H1 in terminal output
                                         console.error(`[${siteName}] ❌ FAILED: Direct link "${cleanItemText}" failed validation against H1: ${h1Text}`);
                                         stepFailed = true;
                                     } else {
