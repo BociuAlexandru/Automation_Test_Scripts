@@ -6,9 +6,15 @@ import * as fs from 'fs';
 import path from 'path';
 
 // --- PROJECT CONFIGURATION DATA ---
+// Shared desktop smoke test for JocPacanele and JocuriCazinouri with site-specific selectors.
+// Each project has its own configuration object with BASE_URL, SEARCH_PHRASE, SELECTORS, and BACK_STEPS.
+
 type ProjectConfig = {
+    // The base URL for the project
     BASE_URL: string;
+    // The search phrase to use for the test
     SEARCH_PHRASE: string;
+    // Selectors for the project's search input, search button, first game card, demo CTA, and close button
     SELECTORS: {
         SearchInput: string;
         SearchButton: string;
@@ -16,11 +22,14 @@ type ProjectConfig = {
         DemoCTA: string;
         CloseButton: string;
     };
+    // The number of steps to go back to return to the starting URL
     BACK_STEPS: number;
 };
 
+// Supported projects for this test
 type SupportedProject = 'jocpacanele' | 'jocuricazinouri';
 
+// Configuration objects for each supported project
 const CONFIG: Record<SupportedProject, ProjectConfig> = {
     // Configuration for the project that is already working
     jocpacanele: {
@@ -29,7 +38,6 @@ const CONFIG: Record<SupportedProject, ProjectConfig> = {
         SELECTORS: {
             SearchInput: 'input.orig',
             SearchButton: 'button.promagnifier',
-
             FirstGameCard: '.article-card__image-wrapper > a',
             DemoCTA: '.slot-placeholder__buttons > a',
             CloseButton: '.iframe-actions > .icon-close-solid'
@@ -45,7 +53,6 @@ const CONFIG: Record<SupportedProject, ProjectConfig> = {
         SELECTORS: {
             SearchInput: 'input.page-search__input',       
             SearchButton: 'a.page-search__button.searchbar-btn',
-
             FirstGameCard: '.d-flex.flex-column.post-thumb__left.h-100 > a',
             DemoCTA: '.single-slot__img-overlay > a',
             CloseButton: '.close-iframe > .icon-x'
@@ -54,21 +61,26 @@ const CONFIG: Record<SupportedProject, ProjectConfig> = {
     }
 } as const;
 
+// Helper function to check if a project is supported
 const isSupportedProject = (name: string): name is SupportedProject => name in CONFIG;
 
+// Runtime knobs for logging, CSV persistence, and minor timing utilities.
 const VERBOSE_LOGGING = false;
 const CSV_FAILURE_DIR = path.join(process.cwd(), 'failures');
 const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-');
 const CSV_HEADER = 'Project,Step,Details,URL,Error Message\n';
 
+// Helper function for verbose logging
 const verboseLog = (...args: unknown[]) => {
     if (VERBOSE_LOGGING) {
         console.log(...args);
     }
 };
 
+// Helper function to generate a random delay
 const randomDelay = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 
+// Helper function to normalize a URL
 const normalizeUrl = (input: string) => {
     const url = new URL(input);
     url.hash = '';
@@ -79,15 +91,18 @@ const normalizeUrl = (input: string) => {
     return url.toString();
 };
 
+// Helper function to escape a value for CSV output
 const csvEscape = (value: unknown) => {
     if (value === null || value === undefined) return '""';
     const str = String(value).replace(/"/g, '""').replace(/(\r\n|\n|\r)/gm, ' ');
     return `"${str}"`;
 };
 
+// Helper function to get the CSV file path for a project
 const getCsvFilePath = (projectName: string) =>
     path.join(CSV_FAILURE_DIR, `${projectName}_p1-games-list-search-JP-JC-desktop_${RUN_TIMESTAMP}.csv`);
 
+// Helper function to ensure the CSV file is initialized for a project
 const ensureCsvInitialized = (projectName: string) => {
     if (!fs.existsSync(CSV_FAILURE_DIR)) {
         fs.mkdirSync(CSV_FAILURE_DIR, { recursive: true });
@@ -99,11 +114,13 @@ const ensureCsvInitialized = (projectName: string) => {
     return csvPath;
 };
 
+// Helper function to append a failure row to the CSV file for a project
 const appendFailureRow = (projectName: string, csvRow: string) => {
     const csvPath = ensureCsvInitialized(projectName);
     fs.appendFileSync(csvPath, `${csvRow}\n`, { encoding: 'utf8' });
 };
 
+// Helper function to log a step failure
 const logStepFailure = (projectName: string, stepName: string, details: string, page: Page, error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     let currentUrl = 'about:blank';
@@ -122,12 +139,15 @@ const logStepFailure = (projectName: string, stepName: string, details: string, 
     appendFailureRow(projectName, csvRow);
 };
 
+// Helper function to log a step status
 const logStepStatus = (stepName: string, passed: boolean) => {
     const prefix = passed ? '✅' : '❌';
     console.log(`${prefix} ${stepName}`);
 };
 
+// Helper function to ensure the page returns to the starting URL
 const ensureReturnToStart = async (page: Page, baseUrl: string, backSteps: number) => {
+    // Attempts to walk back the history stack backSteps times before forcing a direct navigation.
     const target = normalizeUrl(baseUrl);
 
     for (let i = 0; i < Math.max(backSteps - 1, 0); i++) {
@@ -148,6 +168,7 @@ const ensureReturnToStart = async (page: Page, baseUrl: string, backSteps: numbe
     }
 };
 
+// Helper function to run an audited step
 const runAuditedStep = async <T>(
     page: Page,
     projectName: string,

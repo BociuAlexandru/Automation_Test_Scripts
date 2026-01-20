@@ -1,9 +1,11 @@
 import { test, expect, Page, Locator } from '@playwright/test';
 import * as fs from 'fs';
 import path from 'path';
+// Desktop smoke for casino.com.ro slot search/demo flow with CSV logging + audited steps.
 
 const BASE_URL = 'https://casino.com.ro/sloturi/';
 const SUPPORTED_PROJECTS = new Set(['casino.com.ro']);
+// Constants define search targets, typing cadence, CTA selectors, and retry budgets.
 const SEARCH_PHRASE = 'Sizzling Hot Deluxe';
 const HUMAN_TYPE_DELAY = { min: 70, max: 160 };
 const HUMAN_DELAY = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -16,6 +18,7 @@ const SEARCH_INPUT_SELECTOR = 'form[action*="/sloturi/"] input[name="search"], i
 const CSV_FAILURE_DIR = path.join(process.cwd(), 'failures');
 const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-');
 const CSV_HEADER = 'Project,Step,Details,URL,Error Message\n';
+// CSV helpers mirror the pattern used across weekly specs for per-site failure artifacts.
 
 const csvEscape = (value: unknown) => {
     if (value === null || value === undefined) return '""';
@@ -85,6 +88,7 @@ const runAuditedStep = async <T>(
 };
 
 const typeLikeHuman = async (page: Page, selectorOrLocator: string | Locator, text: string) => {
+    // Utility to convert Playwright typing into a human cadence with random delays.
     const input = typeof selectorOrLocator === 'string' ? page.locator(selectorOrLocator).first() : selectorOrLocator.first();
     await input.waitFor({ state: 'visible', timeout: 10000 });
     await input.click({ delay: HUMAN_DELAY(80, 140) });
@@ -95,6 +99,7 @@ const typeLikeHuman = async (page: Page, selectorOrLocator: string | Locator, te
 };
 
 const acceptCookiesIfPresent = async (page: Page) => {
+    // Attempts multiple known cookie banner selectors before proceeding.
     const selectors = [
         'button#CybotCookiebotDialogBodyButtonAccept',
         'button:has-text("Accept")',
@@ -117,12 +122,14 @@ const acceptCookiesIfPresent = async (page: Page) => {
 };
 
 const ensureSlotTileClickable = async (tile: Locator) => {
+    // Scroll + hover to reveal CTA overlays on grid tiles.
     await tile.waitFor({ state: 'visible', timeout: 10000 });
     await tile.scrollIntoViewIfNeeded();
     await tile.hover();
 };
 
 const ensureReturnedToList = async (page: Page) => {
+    // Best-effort back navigation with fallbacks to ensure we return to BASE_URL.
     for (let attempt = 1; attempt <= MAX_BACK_ATTEMPTS; attempt++) {
         if (page.url().startsWith(BASE_URL)) {
             return;
@@ -144,6 +151,7 @@ const ensureReturnedToList = async (page: Page) => {
 };
 
 test('P1: CCR slot search and demo smoke (desktop)', async ({ page }, testInfo) => {
+    // Guard so this spec only runs for casino.com.ro projects.
     const currentProject = testInfo.project.name;
     if (currentProject && !SUPPORTED_PROJECTS.has(currentProject)) {
         test.skip(true, `CCR desktop spec only runs for: ${Array.from(SUPPORTED_PROJECTS).join(', ')}`);

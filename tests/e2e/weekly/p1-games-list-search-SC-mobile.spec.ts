@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import path from 'path';
 
 // --- DEVICE SETUP -----------------------------------------------------------
+// Set up iPhone 13 device descriptor for mobile testing.
+
 const { defaultBrowserType: _ignored, ...iPhone13Descriptor } = devices['iPhone 13'];
 
 test.use({
@@ -14,42 +16,47 @@ test.use({
 });
 
 // --- CONSTANTS --------------------------------------------------------------
-const BASE_URL = 'https://www.supercazino.ro/sloturi-gratis/';
-const SUPPORTED_PROJECTS = new Set(['supercazino']);
+// Supercazino mobile selectors + logging knobs shared across helpers.
 
-const SEARCH_PHRASE = 'Sizzling Hot Deluxe';
-const VERBOSE_LOGGING = false;
-const CSV_FAILURE_DIR = path.join(process.cwd(), 'failures');
-const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-');
-const CSV_HEADER = 'Project,Step,Details,URL,Error Message\n';
+const BASE_URL = 'https://www.supercazino.ro/sloturi-gratis/'; // Base URL for Supercazino mobile.
+const SUPPORTED_PROJECTS = new Set(['supercazino']); // Supported projects for this test.
 
-const SEARCH_INPUT_SELECTOR = 'form[role="search"] input.orig[aria-label="Search input"]';
-const FIRST_RESULT_SELECTOR = 'a.mb-3[href*="sizzling-hot-deluxe"]';
-const DEMO_CTA_SELECTOR = 'a.btn.btn--1.border-0.iframeBtn';
-const CLOSE_POPUP_SELECTOR = 'svg.close-modal';
-const DEMO_IFRAME_SELECTOR = 'iframe[src*="gamelaunch.everymatrix.com"]';
+const SEARCH_PHRASE = 'Sizzling Hot Deluxe'; // Search phrase for testing.
+const VERBOSE_LOGGING = false; // Enable verbose logging for debugging.
 
-const COOKIE_ALLOW_ALL_SELECTOR = '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll';
-const COOKIE_GENERIC_ACCEPT_SELECTOR = '#CybotCookiebotDialogBodyButtonAccept';
-const COOKIE_IFRAME_SELECTOR = 'iframe[id*="CybotCookiebotDialog"], iframe[src*="cookiebot"]';
-const STICKY_OFFER_CLOSE_SELECTOR = '#close-fixed-offer';
+const CSV_FAILURE_DIR = path.join(process.cwd(), 'failures'); // Directory for CSV failure logs.
+const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-'); // Timestamp for CSV file naming.
+const CSV_HEADER = 'Project,Step,Details,URL,Error Message\n'; // CSV header for failure logs.
+
+const SEARCH_INPUT_SELECTOR = 'form[role="search"] input.orig[aria-label="Search input"]'; // Search input selector.
+const FIRST_RESULT_SELECTOR = 'a.mb-3[href*="sizzling-hot-deluxe"]'; // First search result selector.
+const DEMO_CTA_SELECTOR = 'a.btn.btn--1.border-0.iframeBtn'; // Demo CTA selector.
+const CLOSE_POPUP_SELECTOR = 'svg.close-modal'; // Close popup selector.
+const DEMO_IFRAME_SELECTOR = 'iframe[src*="gamelaunch.everymatrix.com"]'; // Demo iframe selector.
+
+const COOKIE_ALLOW_ALL_SELECTOR = '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll'; // Cookie allow all selector.
+const COOKIE_GENERIC_ACCEPT_SELECTOR = '#CybotCookiebotDialogBodyButtonAccept'; // Cookie generic accept selector.
+const COOKIE_IFRAME_SELECTOR = 'iframe[id*="CybotCookiebotDialog"], iframe[src*="cookiebot"]'; // Cookie iframe selector.
+const STICKY_OFFER_CLOSE_SELECTOR = '#close-fixed-offer'; // Sticky offer close selector.
 const NEWSLETTER_CLOSE_SELECTOR =
-    '.CloseButton__ButtonElement-sc-79mh24-0.springfield-CloseButton.springfield-close.springfield-ClosePosition--top-left';
+    '.CloseButton__ButtonElement-sc-79mh24-0.springfield-CloseButton.springfield-close.springfield-ClosePosition--top-left'; // Newsletter close selector.
 
 // --- HELPERS ----------------------------------------------------------------
-const randomDelay = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+// Popup dismissal, human typing, back-navigation, and CSV logging utilities.
+
+const randomDelay = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min; // Generate random delay.
 
 const verboseLog = (...args: unknown[]) => {
     if (VERBOSE_LOGGING) {
         console.log(...args);
     }
-};
+}; // Log verbose messages.
 
 const verboseWarn = (...args: unknown[]) => {
     if (VERBOSE_LOGGING) {
         console.warn(...args);
     }
-};
+}; // Log verbose warnings.
 
 const normalizeUrl = (input: string) => {
     try {
@@ -63,7 +70,7 @@ const normalizeUrl = (input: string) => {
     } catch {
         return input;
     }
-};
+}; // Normalize URL.
 
 const clickIfVisible = async (locator: Locator) => {
     if ((await locator.count()) === 0) {
@@ -79,7 +86,7 @@ const clickIfVisible = async (locator: Locator) => {
         .click({ delay: randomDelay(40, 120) })
         .then(() => true)
         .catch(() => false);
-};
+}; // Click element if visible.
 
 const acceptCookiesIfPresent = async (page: Page) => {
     const selectors = [
@@ -100,18 +107,18 @@ const acceptCookiesIfPresent = async (page: Page) => {
     }
 
     return false;
-};
+}; // Accept cookies if present.
 
-const closeStickyOfferIfPresent = (page: Page) => clickIfVisible(page.locator(STICKY_OFFER_CLOSE_SELECTOR));
+const closeStickyOfferIfPresent = (page: Page) => clickIfVisible(page.locator(STICKY_OFFER_CLOSE_SELECTOR)); // Close sticky offer if present.
 
-const closeNewsletterIfPresent = (page: Page) => clickIfVisible(page.locator(NEWSLETTER_CLOSE_SELECTOR));
+const closeNewsletterIfPresent = (page: Page) => clickIfVisible(page.locator(NEWSLETTER_CLOSE_SELECTOR)); // Close newsletter if present.
 
 const handleAmbientPopups = async (page: Page) => {
     // Best effort: never wait for these popups; dismiss only if visible.
     await acceptCookiesIfPresent(page);
     await closeStickyOfferIfPresent(page);
     await closeNewsletterIfPresent(page);
-};
+}; // Handle ambient popups.
 
 const typeLikeHuman = async (locator: Locator, text: string) => {
     const input = locator.first();
@@ -122,7 +129,7 @@ const typeLikeHuman = async (locator: Locator, text: string) => {
     for (const char of text) {
         await input.page().keyboard.type(char, { delay: randomDelay(70, 150) });
     }
-};
+}; // Type text like a human.
 
 const forceSameTabNavigation = async (locator: Locator) => {
     await locator.evaluate((node) => {
@@ -131,7 +138,7 @@ const forceSameTabNavigation = async (locator: Locator) => {
             node.rel = 'noopener noreferrer';
         }
     });
-};
+}; // Force same tab navigation.
 
 const ensureReturnToListPage = async (page: Page, baseUrl: string) => {
     const target = normalizeUrl(baseUrl);
@@ -159,16 +166,16 @@ const ensureReturnToListPage = async (page: Page, baseUrl: string) => {
         .catch((error) => {
             throw error;
         });
-};
+}; // Ensure return to list page.
 
 const csvEscape = (value: unknown) => {
     if (value === null || value === undefined) return '""';
     const str = String(value).replace(/"/g, '""').replace(/(\r\n|\n|\r)/gm, ' ');
     return `"${str}"`;
-};
+}; // Escape CSV values.
 
 const getCsvFilePath = (projectName: string) =>
-    path.join(CSV_FAILURE_DIR, `${projectName}_p1-games-list-search-SC-mobile_${RUN_TIMESTAMP}.csv`);
+    path.join(CSV_FAILURE_DIR, `${projectName}_p1-games-list-search-SC-mobile_${RUN_TIMESTAMP}.csv`); // Get CSV file path.
 
 const ensureCsvInitialized = (projectName: string) => {
     if (!fs.existsSync(CSV_FAILURE_DIR)) {
@@ -179,12 +186,12 @@ const ensureCsvInitialized = (projectName: string) => {
         fs.writeFileSync(csvPath, CSV_HEADER, { encoding: 'utf8' });
     }
     return csvPath;
-};
+}; // Ensure CSV initialization.
 
 const appendFailureRow = (projectName: string, csvRow: string) => {
     const csvPath = ensureCsvInitialized(projectName);
     fs.appendFileSync(csvPath, `${csvRow}\n`, { encoding: 'utf8' });
-};
+}; // Append failure row to CSV.
 
 const logStepFailure = (projectName: string, stepName: string, details: string, page: Page, error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -202,12 +209,12 @@ const logStepFailure = (projectName: string, stepName: string, details: string, 
         csvEscape(message),
     ].join(',');
     appendFailureRow(projectName, csvRow);
-};
+}; // Log step failure.
 
 const logStepStatus = (stepName: string, passed: boolean) => {
     const prefix = passed ? '✅' : '❌';
     console.log(`${prefix} ${stepName}`);
-};
+}; // Log step status.
 
 const runAuditedStep = async (
     page: Page,
@@ -225,9 +232,11 @@ const runAuditedStep = async (
             throw error;
         }
     });
-};
+}; // Run audited step.
 
 // --- TEST -------------------------------------------------------------------
+// P1 Mobile: SC slot search and demo flow test.
+
 test('P1 Mobile: SC slot search and demo flow', async ({ page }, testInfo) => {
     const currentProject = testInfo.project.name;
     if (currentProject && !SUPPORTED_PROJECTS.has(currentProject)) {

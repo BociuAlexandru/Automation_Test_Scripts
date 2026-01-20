@@ -1,15 +1,17 @@
 import { test, expect, Page, Locator } from '@playwright/test';
 import * as fs from 'fs';
 import path from 'path';
+// Jocsloturi desktop smoke: iterate slot cards, launch demos, and log failures per step.
 
 const BASE_URL = 'https://jocsloturi.ro/sloturi-online-gratis/';
 const SUPPORTED_PROJECTS = new Set(['jocsloturi']);
-const MAX_SLOTS_TO_TEST = 3;
+const MAX_SLOTS_TO_TEST = 3; // iterate only a subset of cards per run to stay fast
 const VERBOSE_LOGGING = false;
 const CSV_FAILURE_DIR = path.join(process.cwd(), 'failures');
 const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-');
-const CSV_HEADER = 'Project,Step,Details,URL,Error Message\n';
+const CSV_HEADER = 'Project,Step,Details,URL,Error Message\n'; // matches other weekly specs
 
+// Verbose logging toggled via flag for easier local debugging without polluting CI logs.
 const verboseLog = (...args: unknown[]) => {
     if (VERBOSE_LOGGING) {
         console.log(...args);
@@ -22,6 +24,7 @@ const verboseWarn = (...args: unknown[]) => {
     }
 };
 
+// CSV helpers mirror the pattern used across weekly specs for post-run triage.
 const csvEscape = (value: unknown) => {
     if (value === null || value === undefined) return '""';
     const str = String(value).replace(/"/g, '""').replace(/(\r\n|\n|\r)/gm, ' ');
@@ -89,6 +92,7 @@ const runAuditedStep = async <T>(
     });
 };
 
+// Selectors capture list cards, hover overlays, and CTA buttons specific to Jocsloturi's theme.
 const LIST_SLOT_CARD_SELECTOR = '.slot-item';
 const LIST_SLOT_IMAGE_SELECTOR = '.slot-image';
 const LIST_SLOT_CTA_SELECTOR = '.slot-image-content a.button.button-orange-gradient[href*="/jocuri-cu-sloturi/"]';
@@ -274,6 +278,7 @@ const forceSameTabNavigation = async (locator: Locator) => {
     });
 };
 
+// --- MAIN TEST -------------------------------------------------------------
 test('P1: Jocsloturi slot list demo smoke (desktop)', async ({ page }, testInfo) => {
     const currentProject = testInfo.project.name;
     if (currentProject && !SUPPORTED_PROJECTS.has(currentProject)) {

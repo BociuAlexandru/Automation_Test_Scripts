@@ -1,10 +1,18 @@
 // File Path: tests/e2e/p1-games-list-search.spec.ts
+// Supercazino desktop search + demo smoke with per-step CSV logging.
 
 import { test, expect, Page } from '@playwright/test';
 import * as fs from 'fs';
 import path from 'path';
 
 // --- PROJECT CONFIGURATION DATA ---
+// Holds selectors and behavior toggles for supported SC variants (currently one).
+// Each project config contains:
+// - BASE_URL: The starting URL for the test.
+// - SEARCH_PHRASE: The search phrase to input in the search bar.
+// - SELECTORS: An object containing CSS selectors for various elements on the page.
+// - BACK_STEPS: The number of steps to go back after the test.
+
 type ProjectConfig = {
     BASE_URL: string;
     SEARCH_PHRASE: string;
@@ -37,22 +45,28 @@ const CONFIG: Record<SupportedProject, ProjectConfig> = {
     }
 };
 
+// --- HELPER UTILITIES ---
+// Checks if a project name is supported by the test.
 const isSupportedProject = (name: string): name is SupportedProject => name in CONFIG;
 
+// Generates a random delay between two numbers to simulate human-like behavior.
 const randomDelay = (min: number, max: number) =>
     Math.floor(Math.random() * (max - min + 1)) + min;
 
+// Toggles for verbose logging and CSV failure logging.
 const VERBOSE_LOGGING = false;
 const CSV_FAILURE_DIR = path.join(process.cwd(), 'failures');
 const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-');
 const CSV_HEADER = 'Project,Step,Details,URL,Error Message\n';
 
+// Logs a message if verbose logging is enabled.
 const verboseLog = (...args: unknown[]) => {
     if (VERBOSE_LOGGING) {
         console.log(...args);
     }
 };
 
+// Normalizes a URL by removing the hash and search parameters.
 const normalizeUrl = (input: string) => {
     const url = new URL(input);
     url.hash = '';
@@ -63,6 +77,7 @@ const normalizeUrl = (input: string) => {
     return url.toString();
 };
 
+// Simulates human-like typing by typing each character with a random delay.
 const typeLikeHuman = async (page: Page, selector: string, text: string) => {
     const input = page.locator(selector);
     await input.waitFor({ state: 'visible' });
@@ -73,7 +88,9 @@ const typeLikeHuman = async (page: Page, selector: string, text: string) => {
     }
 };
 
+// Accepts cookies if a cookie banner is present on the page.
 const acceptCookiesIfPresent = async (page: Page) => {
+    // List of possible cookie banner selectors.
     const selectors = [
         'button:has-text("Acceptă")',
         'button:has-text("Acceptă selecția")',

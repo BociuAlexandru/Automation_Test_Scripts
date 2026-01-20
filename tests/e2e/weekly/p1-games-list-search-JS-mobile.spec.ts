@@ -15,6 +15,7 @@ test.use({
 });
 
 // --- CONSTANTS --------------------------------------------------------------
+// Site-specific selectors plus logging/CSV knobs reused across helpers.
 const BASE_URL = 'https://jocsloturi.ro/sloturi-online-gratis/';
 const SUPPORTED_PROJECTS = new Set(['jocsloturi']);
 const MAX_SLOTS_TO_TEST = 3;
@@ -35,6 +36,7 @@ const NEWSLETTER_CLOSE_SELECTOR =
 const OFFER_CLOSE_SELECTOR = '.sticky-popup__close';
 
 // --- UTILS ------------------------------------------------------------------
+// Popup dismissal, hover/tap helpers, and CSV logging utilities for Jocsloturi mobile.
 const randomDelay = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const verboseLog = (...args: unknown[]) => {
     if (VERBOSE_LOGGING) {

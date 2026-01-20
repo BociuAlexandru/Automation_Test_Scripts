@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import path from 'path';
 
 // --- DEVICE & CONTEXT SETUP ------------------------------------------------
-// Use the built-in iPhone 13 descriptor so the test behaves like a mobile user.
+// Mobile suite mirrors end-users on iPhone 13 to exercise responsive layouts.
 const { defaultBrowserType: _ignored, ...iPhone13Descriptor } = devices['iPhone 13'];
 
 // Apply the mobile device settings plus Romanian locale/timezone for parity with prod.
@@ -16,7 +16,7 @@ test.use({
 });
 
 // --- CONFIGURATION TYPES ---------------------------------------------------
-// Each supported project provides its own selectors and search phrase.
+// Each supported project provides its own selectors, CTA mode, and cleanup requirements.
 type DemoLaunchMode = 'popup' | 'new_tab';
 
 type ProjectConfig = {
@@ -37,7 +37,7 @@ type ProjectConfig = {
 };
 
 // --- GENERIC HELPERS -------------------------------------------------------
-// Close the sticky offer banner if it happens to appear.
+// Utility layer for popup dismissal, typing, and DOM hygiene shared by both sites.
 const closeOfferPopupIfPresent = async (page: Page, selector: string, timeout = 1000) => {
     const closeButton = page.locator(selector).first();
     if ((await closeButton.count()) === 0) {
@@ -57,6 +57,7 @@ const closeOfferPopupIfPresent = async (page: Page, selector: string, timeout = 
 type SupportedProject = 'jocpacanele' | 'jocuricazinouri';
 
 // --- PROJECT CONFIG --------------------------------------------------------
+// Selector maps + behavior toggles per site (JP popup vs JC new-tab demos).
 const CONFIG: Record<SupportedProject, ProjectConfig> = {
     jocpacanele: {
         BASE_URL: 'https://jocpacanele.ro/jocuri-pacanele/',

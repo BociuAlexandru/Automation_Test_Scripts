@@ -1,6 +1,7 @@
 import { test, expect, devices, Page, Locator } from '@playwright/test';
 import * as fs from 'fs';
 import path from 'path';
+// Mobile slot search + demo smoke for casino.com.ro with iPhone 13 emulation and CSV logging.
 
 // --- DEVICE SETUP -----------------------------------------------------------
 const { defaultBrowserType: _ignored, ...iPhone13Descriptor } = devices['iPhone 13'];
@@ -14,6 +15,7 @@ test.use({
 });
 
 // --- CONSTANTS --------------------------------------------------------------
+// Defines selectors, search targets, wait budgets, and CSV bookkeeping for the flow.
 const BASE_URL = 'https://casino.com.ro/sloturi/';
 const SUPPORTED_PROJECTS = new Set(['casino.com.ro']);
 const SEARCH_PHRASE = 'Sizzling Hot Deluxe';
@@ -36,6 +38,7 @@ const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-');
 const CSV_HEADER = 'Project,Step,Details,URL,Error Message\n';
 
 // --- HELPERS ----------------------------------------------------------------
+// Popup dismissal, humanized typing, navigation helpers, loop guards, and CSV utilities.
 const randomDelay = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const verboseLog = (...args: unknown[]) => {
     if (VERBOSE_LOGGING) {
@@ -53,6 +56,7 @@ type ClickOptions = {
 };
 
 const clickIfVisible = async (locator: Locator, label: string, options: ClickOptions = {}) => {
+    // Generic tap helper that falls back to JS click if regular clicks fail (common on overlays).
     if ((await locator.count()) === 0) {
         return false;
     }
@@ -126,6 +130,7 @@ const closeNewsletterIfPresent = async (page: Page) => {
 };
 
 const dismissBlockingUi = async (page: Page) => {
+    // Chains cookie + newsletter dismissal since they frequently overlap the search UI.
     await acceptCookiesIfPresent(page);
     await closeNewsletterIfPresent(page);
 };
@@ -147,6 +152,7 @@ const waitForSearchResults = async (page: Page) => {
 };
 
 const ensureSlotTileClickable = async (tile: Locator, page: Page) => {
+    // Force slot cards into a clickable state by adjusting overlay styles when necessary.
     await tile.waitFor({ state: 'visible', timeout: 15000 });
     await tile.scrollIntoViewIfNeeded();
     await page.waitForTimeout(200);
@@ -273,6 +279,7 @@ const forceSameTabNavigation = async (locator: Locator) => {
 };
 
 const getFirstResultTile = async (page: Page) => {
+    // Prefer exact slug match, then fall back to alt/text matches before defaulting to first tile.
     const slugMatch = page.locator(`${SLOT_TILE_SELECTOR}[href*="${SEARCH_SLUG}"]`).first();
     if ((await slugMatch.count()) > 0) {
         return slugMatch;
@@ -296,6 +303,7 @@ const getFirstResultTile = async (page: Page) => {
 };
 
 const withLoopGuard = async <T>(action: () => Promise<T>, label: string, timeoutMs = LOOP_GUARD_MS) => {
+    // Protects flaky interactions (typing, search, etc.) from hanging forever by timing out.
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
         return await Promise.race([
@@ -389,6 +397,7 @@ const runAuditedStep = async <T>(
 
 // --- TEST -------------------------------------------------------------------
 test('P1 Mobile: CCR slot search and demo smoke', async ({ page }, testInfo) => {
+    // Only execute for casino.com.ro project; skip others.
     const currentProject = testInfo.project.name;
     if (currentProject && !SUPPORTED_PROJECTS.has(currentProject)) {
         test.skip(true, `CCR mobile spec only runs for: ${Array.from(SUPPORTED_PROJECTS).join(', ')}`);
