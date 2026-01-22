@@ -59,7 +59,7 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
         ctaSelector: 'a.affiliate-meta-link[data-casino]',
         includePatterns: UNIVERSAL_CRAWL_PATTERNS,
         excludePatterns: [], 
-        maxPages: 200,
+        maxPages: 100,
         highTrafficPaths: [
             '/', '/bonus-fara-depunere-2025/', '/rotiri-gratuite-fara-depunere-2025/',
             '/new-subscribers-email/', '/gads-lp-rotiri-gratuite-fara-depunere-pmax/',
@@ -82,7 +82,7 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
         ctaSelector: 'a.affiliate-meta-link[data-casino]',
         includePatterns: UNIVERSAL_CRAWL_PATTERNS,
         excludePatterns: [],
-        maxPages: 200,
+        maxPages: 100,
         highTrafficPaths: [
             '/', '/jocuri/pacanele-clasice/', '/jocuri-cu-pacanele/shinning-crown-pacanele-online/',
             '/jocuri-pacanele/', '/bonusuri-fara-depunere-pm/', '/jocuri-cu-pacanele/pacanele-7777-40-super-hot/',
@@ -113,7 +113,7 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
         ctaSelector: 'a.affiliate-meta-link[data-casino-name]',
         includePatterns: UNIVERSAL_CRAWL_PATTERNS,
         excludePatterns: [],
-        maxPages: 200,
+        maxPages: 100,
         highTrafficPaths: [
             '/', '/cazinouri-online-cu-bonus-fara-depunere/', '/casino/betano/',
             '/casino/bet7/', '/casino/hot-spins/', '/casino/frank-casino/',
@@ -130,7 +130,7 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
         ctaSelector: 'a.affiliate-meta-link[data-casino]',
         includePatterns: UNIVERSAL_CRAWL_PATTERNS,
         excludePatterns: [], 
-        maxPages: 200,
+        maxPages: 100,
         highTrafficPaths: [
             '/', '/bonus-fara-depunere-sloturi/', '/blog/cum-se-joaca-barbut/',
             '/sloturi-casino-online/', '/blog/depunere-minima-10-lei/', '/jocuri/sloturi-777/',
@@ -147,7 +147,7 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
         ctaSelector: 'a.affiliate-meta-link[data-casino]',
         includePatterns: UNIVERSAL_CRAWL_PATTERNS,
         excludePatterns: [], 
-        maxPages: 200,
+        maxPages: 100,
         highTrafficPaths: [
             '/', '/jocuri/pacanele-gratis/', '/new-no-deposit/', '/bonusuri-fara-depunere-online-2025/',
             '/rotiri-fara-depunere-online-2025/', '/bonusuri-fara-depunere-pmax/', '/bonus-fara-depunere/',
@@ -171,7 +171,7 @@ export const siteConfigs: Record<SiteName, SiteConfig> = {
         ctaSelector: 'a.affiliate-meta-link[data-casino]',
         includePatterns: UNIVERSAL_CRAWL_PATTERNS,
         excludePatterns: [], 
-        maxPages: 200,
+        maxPages: 100,
         highTrafficPaths: [
             '/', '/ponturi-pariuri/', '/ponturi-pariuri/fotbal/', '/biletul-zilei/',
             '/cota-2/', '/meciuri-azi/', '/echipa-cfr-cluj/', '/case-pariuri-oferte/',

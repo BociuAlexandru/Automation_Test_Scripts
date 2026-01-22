@@ -95,9 +95,10 @@ export async function crawlSite(
     baseURL: string,
     config: SiteConfig,
 ): Promise<CrawlResult> {
-    const discoveredUrls: string[] = [];
+    const eligibleUrls: string[] = [];
     const skippedUrls: string[] = [];
     const maxPages = config.maxPages; 
+    
     const sitemapUrl = `${baseURL}/sitemap.xml`; 
     
     console.log(`[CRAWLER] Attempting to fetch sitemap from: ${sitemapUrl}`);
@@ -109,6 +110,7 @@ export async function crawlSite(
     // --- FILTERING AND LIMITING ---
     for (const fullUrl of rawContentUrls) {
         let path = '';
+
         try {
             // 1. Normalize the full URL to a relative path
             const urlObj = new URL(fullUrl);
@@ -133,23 +135,29 @@ export async function crawlSite(
             continue;
         }
         
-        // Check 3: Max Pages Limit
-        if (discoveredUrls.length < maxPages) {
-            discoveredUrls.push(path);
-        } else {
-            // Once maxPages is hit, we stop immediately
-            break;
-        }
+        eligibleUrls.push(path);
     }
-    
+
+    // Deduplicate before sampling
+    const uniqueEligibleUrls = Array.from(new Set(eligibleUrls));
+
+    // Fisher-Yates shuffle to randomize selection deterministically per run
+    for (let i = uniqueEligibleUrls.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [uniqueEligibleUrls[i], uniqueEligibleUrls[j]] = [uniqueEligibleUrls[j], uniqueEligibleUrls[i]];
+    }
+
+    const discoveredUrls = uniqueEligibleUrls.slice(0, maxPages);
+
     console.log(`[CRAWLER] Final URLs selected for audit: ${discoveredUrls.length}`);
-    
+
     // Fallback if no URLs were found (e.g., sitemap index was empty or fatal error)
     if (discoveredUrls.length === 0) {
         console.log('[CRAWLER] WARNING: No URLs found via sitemap. Auditing homepage as fallback.');
         discoveredUrls.push(...config.startPaths.slice(0, 1));
     }
 
-    // Ensure the array is unique
-    return { discoveredUrls: Array.from(new Set(discoveredUrls)), skippedUrls };
+    // Ensure the array is unique just before returning
+    const uniqueDiscovered = Array.from(new Set(discoveredUrls));
+    return { discoveredUrls: uniqueDiscovered, skippedUrls };
 }
