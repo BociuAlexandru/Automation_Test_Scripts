@@ -41,160 +41,263 @@ function ensureCsvInitialized(projectName: SiteName) {
 }
 
 function appendFailureRow(projectName: SiteName, csvRow: string) {
-    const csvPath = ensureCsvInitialized(projectName);
-    fs.appendFileSync(csvPath, csvRow + "\n", { encoding: "utf8" });
+  const csvPath = ensureCsvInitialized(projectName);
+  fs.appendFileSync(csvPath, csvRow + "\n", { encoding: "utf8" });
 }
 
 // Function to safely escape strings for CSV (Carried over from original script)
 function csvEscape(str: string | null | undefined) {
-    if (str === null || str === undefined) return '""';
-    return `"${String(str).replace(/"/g, '""').replace(/(\r\n|\n|\r)/gm, ' ')}"`;
+  if (str === null || str === undefined) return '""';
+  return `"${String(str).replace(/"/g, '""').replace(/(\r\n|\n|\r)/gm, ' ')}"`;
+}
+
+function stripDiacritics(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function normalizeUrlForMatch(url: string) {
+  const lowered = url.toLowerCase();
+  try {
+    return decodeURIComponent(lowered);
+  } catch {
+    return lowered;
+  }
+}
+
+const SLUG_STOP_TOKENS = new Set(["casino", "tc", "bn", "lc", "cp"]);
+
+const ASSET_HOST_PATTERNS = [
+  /fonts\.googleapis\.com/i,
+  /fonts\.gstatic\.com/i,
+  /www\.googletagmanager\.com/i,
+  /googlesyndication\.com/i,
+  /doubleclick\.net/i,
+  /static\.cloudflareinsights\.com/i,
+  /www\.google-analytics\.com/i,
+  /connect\.facebook\.net/i,
+];
+
+function isIgnorableAssetUrl(url: string) {
+  try {
+    const { hostname } = new URL(url);
+    return ASSET_HOST_PATTERNS.some((pattern) => pattern.test(hostname));
+  } catch {
+    return false;
+  }
+}
+
+async function waitForAffiliateResponse(popup: Page, deadlineTs: number): Promise<Response> {
+  while (true) {
+    const remaining = deadlineTs - Date.now();
+    if (remaining <= 0) {
+      throw new Error("Timeout waiting for affiliate response");
+    }
+
+    const response = await popup.waitForResponse(
+      (r: Response) => r.url().startsWith("http"),
+      { timeout: remaining },
+    );
+
+    const candidateUrl = response.url();
+    if (isIgnorableAssetUrl(candidateUrl)) {
+      console.log(`[REDIRECT] Ignoring asset response: ${candidateUrl}`);
+      continue;
+    }
+
+    return response;
+  }
+}
+
+function extractSlugTokensFromPath(pathValue?: string | null): string[] {
+  if (!pathValue) return [];
+  const [pathname] = pathValue.split("?");
+  const segments = pathname.split("/").filter(Boolean);
+  if (segments.length === 0) return [];
+
+  const rawSlug = stripDiacritics(segments[segments.length - 1].toLowerCase());
+  if (!rawSlug) return [];
+
+  const rawTokens = rawSlug.split(/[^a-z0-9]+/).filter(Boolean);
+  const filteredTokens = rawTokens
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2 && !SLUG_STOP_TOKENS.has(token));
+
+  console.log(`[TOKENS] Extracted slug tokens: ${filteredTokens.join(", ")}`);
+  return Array.from(new Set(filteredTokens));
 }
 
 // ➡️ Utility functions (Carried over from original script)
 
 async function humanDelay(page: any, minMs: number = 500, maxMs: number = 2000): Promise<void> {
-    const delay = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
-    await page.waitForTimeout(delay);
+  const delay = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+  await page.waitForTimeout(delay);
 }
 
 async function removeWebdriverDetection(page: Page) {
-    await page.addInitScript(() => {
-        Object.defineProperty(navigator, "webdriver", { get: () => undefined });
-        const originalQuery = window.navigator.permissions.query;
-        window.navigator.permissions.query = (parameters) =>
-            parameters.name === "notifications"
-                ? Promise.resolve({ state: Notification.permission } as PermissionStatus)
-                : originalQuery(parameters);
-        Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
-        Object.defineProperty(navigator, "languages", { get: () => ["ro-RO", "ro", "en-US", "en"] });
-    });
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+    const originalQuery = window.navigator.permissions.query;
+    window.navigator.permissions.query = (parameters) =>
+      parameters.name === "notifications"
+        ? Promise.resolve({ state: Notification.permission } as PermissionStatus)
+        : originalQuery(parameters);
+    Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
+    Object.defineProperty(navigator, "languages", { get: () => ["ro-RO", "ro", "en-US", "en"] });
+  });
 }
 
 async function closeModalOrPopup(page: Page) {
-    const closeSelectors = [
-        "#newsletter-popup-close-button", ".close-modal-x", 'button:has-text("NU MULTUMESC")', 'div[aria-label="Close"]', 
-    ];
-    for (const selector of closeSelectors) {
-        try {
-            const closeButton = page.locator(selector).first();
-            if (await closeButton.isVisible({ timeout: 1000 })) {
-                await closeButton.click({ timeout: 5000, force: true });
-                console.log(`[BYPASS] Closed popup using selector: ${selector}`);
-                return true;
-            }
-        } catch (e) {
-            // Ignore errors
-        }
-    }
-    return false;
+  const closeSelectors = [
+    "#newsletter-popup-close-button", ".close-modal-x", 'button:has-text("NU MULTUMESC")', 'div[aria-label="Close"]',
+  ];
+  for (const selector of closeSelectors) {
+    try {
+      const closeButton = page.locator(selector).first();
+      if (await closeButton.isVisible({ timeout: 1000 })) {
+        await closeButton.click({ timeout: 5000, force: true });
+        console.log(`[BYPASS] Closed popup using selector: ${selector}`);
+        return true;
+      }
+    } catch (e) {
+      // Ignore errors
+    }
+  }
+  return false;
 }
 
 /**
- * 🛠️ CORE REDIRECTION AUDIT FUNCTION 
+ * 🛠️ CORE REDIRECTION AUDIT FUNCTION
  * Runs the audit checks on a single page and tracks soft failures.
  */
 async function runPageAudit(
-    browser: Browser, 
-    projectName: SiteName, 
-    baseURL: string, 
-    currentPath: string, 
-    cfg: typeof siteConfigs[SiteName],
-    softFailures: SoftFailure[]
+  browser: Browser,
+  projectName: SiteName,
+  baseURL: string,
+  currentPath: string,
+  cfg: typeof siteConfigs[SiteName],
+  softFailures: SoftFailure[]
 ) {
-    const testInfo = test.info(); 
-    const viewportSettings = testInfo.project.use.viewport || devices["Desktop Chrome"].viewport;
-    const ignoreHTTPSErrors = testInfo.project.use.ignoreHTTPSErrors;
-    const userAgent = testInfo.project.use.userAgent;
-    
-    const auditPage = await browser.newPage({ 
-        viewport: viewportSettings, 
-        ignoreHTTPSErrors: ignoreHTTPSErrors, 
-        userAgent: userAgent,
-    }); 
-    
-    await removeWebdriverDetection(auditPage); 
-    auditPage.on('domcontentloaded', () => removeWebdriverDetection(auditPage).catch(() => {}));
-    
-    await test.step(`Audit Page: ${currentPath}`, async () => {
-        let pageElementCount = 0; 
-        
-        // 1. Navigate to the page
-        try {
-            await auditPage.setExtraHTTPHeaders({ 'Referer': baseURL + (cfg.startPaths[0] || "/"), });
-            await auditPage.goto(baseURL + currentPath, { waitUntil: "domcontentloaded", timeout: 30_000 });
-            await auditPage.waitForLoadState("domcontentloaded");
-        } catch (error: any) {
-            const reason = 'Page Load Failure';
-            const message = error?.message ?? String(error);
-            const csvDetail = `Page Load Failure: ${message}`;
-            const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape('Page Load')},${csvEscape('Page Load Failure')},${csvEscape(csvDetail)},${csvEscape(baseURL + currentPath)}`; // ⬅️ CSV Row Created
-            appendFailureRow(projectName, csvRow); // ⬅️ Logging to CSV
+  const testInfo = test.info();
+  const viewportSettings = testInfo.project.use.viewport || devices["Desktop Chrome"].viewport;
+  const ignoreHTTPSErrors = testInfo.project.use.ignoreHTTPSErrors;
+  const userAgent = testInfo.project.use.userAgent;
 
-            softFailures.push({ sourcePath: currentPath, ctaText: 'Page Load', reason: reason, details: { message: message }, csvRow: csvRow });
-            console.error(`[${projectName}] ❌ FAIL Page Load on ${currentPath}: ${message}`);
-            await auditPage.close(); 
-            return; 
-        }
+  const auditPage = await browser.newPage({
+    viewport: viewportSettings,
+    ignoreHTTPSErrors: ignoreHTTPSErrors,
+    userAgent: userAgent,
+  });
 
-        await closeModalOrPopup(auditPage); 
-        await humanDelay(auditPage, 500, 1000); 
+  await removeWebdriverDetection(auditPage);
+  auditPage.on('domcontentloaded', () => removeWebdriverDetection(auditPage).catch(() => {}));
 
-        // 2. LINK SCRAPING: Find ALL links and filter by URL pattern
-        const allLinks = auditPage.locator("a[href]");
+  await test.step(`Audit Page: ${currentPath}`, async () => {
+    let pageElementCount = 0;
 
-        const allLinkData = await allLinks.evaluateAll((nodes, options) => {
-            const affiliateUrlPattern = options.affiliateUrlPattern as RegExp;
-            const baseURL = options.baseURL as string; 
+    // 1. Navigate to the page
+    try {
+      await auditPage.setExtraHTTPHeaders({ 'Referer': baseURL + (cfg.startPaths[0] || "/"), });
+      await auditPage.goto(baseURL + currentPath, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      await auditPage.waitForLoadState("domcontentloaded");
+    } catch (error: any) {
+      const reason = 'Page Load Failure';
+      const message = error?.message ?? String(error);
+      const csvDetail = `Page Load Failure: ${message}`;
+      const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape('Page Load')},${csvEscape('Page Load Failure')},${csvEscape(csvDetail)},${csvEscape(baseURL + currentPath)}`; // ⬅️ CSV Row Created
+      appendFailureRow(projectName, csvRow); // ⬅️ Logging to CSV
 
-            return nodes.map((n: Element) => {
-                const href = n.getAttribute("href");
-                
-                let path = href || "";
-                try {
-                    if (path.startsWith("http")) {
-                        const url = new URL(path);
-                        path = url.pathname + url.search;
-                    }
-                } catch { return null; }
-                
-                // Filter links that do not match the affiliate pattern
-                if (!path.startsWith("/") || !affiliateUrlPattern.test(path)) return null; 
-                
-                return {
-                    href: href,
-                    hasClass: n.classList.contains("affiliate-meta-link"),
-                    hasDataCasino: n.hasAttribute("data-casino") || n.hasAttribute("data-casino-name"),
-                    hasTrackingAttributes: n.classList.contains("affiliate-meta-link") && (n.hasAttribute("data-casino") || n.hasAttribute("data-casino-name")),
-                    target: n.getAttribute("target"),
-                    text: (n as HTMLElement).textContent?.trim().replace(/\s+/g, " ") || "No Text",
-                    selector: 'a[href="' + href + '"]'
-                };
-            }).filter((item) => item !== null);
-            }, { affiliateUrlPattern: cfg.affiliateUrlPattern, baseURL: baseURL });
-            
-            const affiliateLinkCount = allLinkData.length;
-            
-            if (affiliateLinkCount === 0) {
-                console.warn(`[${projectName}] ⚠️ WARN No affiliate links found matching pattern on ${currentPath}`);
-                await auditPage.close();
-                return;
-            }
-            
-            // 3. Process CTA Data and Execute Audit
-            for (let i = 0; i < affiliateLinkCount; i++) {
-                const { href, target, text, hasTrackingAttributes, hasClass, hasDataCasino, selector } = allLinkData[i];
-                
-                pageElementCount++;
-                const ctaId = `LINK #${pageElementCount} (${text})`;
+      softFailures.push({ sourcePath: currentPath, ctaText: 'Page Load', reason: reason, details: { message: message }, csvRow: csvRow });
+      console.error(`[${projectName}] ❌ FAIL Page Load on ${currentPath}: ${message}`);
+      await auditPage.close();
+      return;
+    }
 
-                // --- Preliminary Checks ---
-                let skipAudit: boolean = false; 
+    await closeModalOrPopup(auditPage);
+    await humanDelay(auditPage, 500, 1000);
+
+    // 2. LINK SCRAPING: Find ALL links and filter by URL pattern
+    const allLinks = auditPage.locator("a[href]");
+
+    const allLinkData = await allLinks.evaluateAll((nodes, options) => {
+      const affiliateUrlPattern = options.affiliateUrlPattern as RegExp;
+      const baseURL = options.baseURL as string;
+
+      return nodes.map((n: Element) => {
+        const href = n.getAttribute("href");
+
+        let path = href || "";
+        try {
+          if (path.startsWith("http")) {
+            const url = new URL(path);
+            path = url.pathname + url.search;
+          }
+        } catch { return null; }
+
+        // Filter links that do not match the affiliate pattern
+        if (!path.startsWith("/") || !affiliateUrlPattern.test(path)) return null;
+
+        const element = n as HTMLElement;
+        const normalize = (value?: string | null) => value ? value.trim().replace(/\s+/g, " ") : "";
+
+        let text = normalize(element.innerText || element.textContent);
+        if (!text) text = normalize(element.getAttribute("title"));
+        if (!text) text = normalize(element.getAttribute("aria-label"));
+        if (!text) {
+          const imgWithAlt = element.querySelector("img[alt]");
+          if (imgWithAlt) {
+            text = normalize(imgWithAlt.getAttribute("alt"));
+          }
+        }
+        if (!text) text = normalize(element.getAttribute("data-casino") || element.getAttribute("data-casino-name"));
+        if (!text) text = "No Text";
+
+        return {
+          href: href,
+          hasClass: n.classList.contains("affiliate-meta-link"),
+          hasDataCasino: n.hasAttribute("data-casino") || n.hasAttribute("data-casino-name"),
+          hasTrackingAttributes: n.classList.contains("affiliate-meta-link") && (n.hasAttribute("data-casino") || n.hasAttribute("data-casino-name")),
+          target: n.getAttribute("target"),
+          text,
+          selector: 'a[href="' + href + '"]',
+          normalizedPath: path,
+        };
+      }).filter((item) => item !== null);
+    }, { affiliateUrlPattern: cfg.affiliateUrlPattern, baseURL: baseURL });
+
+    const dedupedLinkData = (() => {
+      const seen = new Set<string>();
+      return allLinkData.filter((item) => {
+        const key = item.normalizedPath || item.href || item.selector;
+        if (!key) return true;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    })();
+
+    const affiliateLinkCount = dedupedLinkData.length;
+
+    if (affiliateLinkCount === 0) {
+      console.warn(`[${projectName}] ⚠️ WARN No affiliate links found matching pattern on ${currentPath}`);
+      await auditPage.close();
+      return;
+    }
+
+    // 3. Process CTA Data and Execute Audit
+    for (let i = 0; i < affiliateLinkCount; i++) {
+      const { href, target, text, hasTrackingAttributes, hasClass, hasDataCasino, selector, normalizedPath } = dedupedLinkData[i];
+
+      pageElementCount++;
+      const ctaId = `LINK #${pageElementCount} (${text})`;
+      const slugTokens = extractSlugTokensFromPath(normalizedPath || href || "");
+
+      // --- Preliminary Checks ---
+      let skipAudit: boolean = false;
 
       // FINALIZED BETANO SKIP: Targeted skip by Href
       if (projectName === "casino.com.ro" && typeof href === "string" && href.toLowerCase().includes("betano")) {
         console.log(`[${projectName}] ⚠️ SKIPPING Betano link to bypass known external stall.`);
-        continue; 
+        continue;
       }
 
       if (!hasTrackingAttributes) {
@@ -224,23 +327,22 @@ async function runPageAudit(
         let popup: Page | undefined;
 
         try {
-          const [newPopup, response] = await Promise.all([
+          const redirectDeadline = Date.now() + REDIRECT_TIMEOUT;
+
+          const [newPopup] = await Promise.all([
             auditPage.waitForEvent("popup", { timeout: REDIRECT_TIMEOUT }),
             auditPage.evaluate((s) => {
               const element = document.querySelector(s);
               if (element) { (element as HTMLAnchorElement).click(); }
             }, selector),
-          ])
-          .then(([p]) => {
-            popup = p;
-            return Promise.all([
-              popup,
-              popup.waitForResponse((r: Response) => r.url().startsWith("http"), { timeout: REDIRECT_TIMEOUT }),
-            ]);
-          }).catch(async (error) => {
-            if (popup) { await popup.close().catch(() => {}); }
-            throw error;
-          });
+          ]);
+
+          popup = newPopup;
+
+          const response = await waitForAffiliateResponse(popup, redirectDeadline);
+
+          const navigationTimeout = Math.min(8000, Math.max(500, redirectDeadline - Date.now()));
+          await popup.waitForNavigation({ waitUntil: "domcontentloaded", timeout: navigationTimeout }).catch(() => null);
 
           const request = response.request();
           const chain: any = (request as any).redirectChain;
@@ -258,7 +360,7 @@ async function runPageAudit(
             }
           }
 
-          const finalUrl = response.url();
+          const finalUrl = popup.url() || response.url();
           const finalOrigin = new URL(finalUrl).origin;
           const projectOrigin = new URL(baseURL).origin;
 
@@ -270,7 +372,24 @@ async function runPageAudit(
             softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: "Final URL is Internal", details: csvDetail, csvRow: csvRow });
             console.error(`[${projectName}] ❌ FAIL ${ctaId} from ${currentPath}: Final URL is Internal - ${finalUrl}`);
           } else {
-            console.log(`[${projectName}] ✅ PASS ${ctaId} from ${currentPath} -> Redirected to ${finalOrigin}`);
+            if (slugTokens.length > 0) {
+              const normalizedFinalUrl = normalizeUrlForMatch(finalUrl);
+              const matchedToken = slugTokens.find((token) => normalizedFinalUrl.includes(token));
+
+              if (!matchedToken) {
+                const csvDetail = `Slug tokens (${slugTokens.join(', ')}) missing from redirect URL: ${finalUrl}`;
+                const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape("Redirect Brand Mismatch")},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`;
+                appendFailureRow(projectName, csvRow);
+
+                softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: "Redirect Brand Mismatch", details: csvDetail, csvRow: csvRow });
+                console.error(`[${projectName}] ❌ FAIL ${ctaId} from ${currentPath}: Redirect Brand Mismatch - ${csvDetail}`);
+                continue;
+              }
+
+              console.log(`[${projectName}] ✅ PASS ${ctaId} from ${currentPath} -> Redirected to ${finalOrigin} (matched token: "${matchedToken}")`);
+            } else {
+              console.log(`[${projectName}] ✅ PASS ${ctaId} from ${currentPath} -> Redirected to ${finalOrigin}`);
+            }
           }
 
         } catch (error: any) {
