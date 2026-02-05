@@ -27,7 +27,8 @@ type SoftFailure = {
 };
 
 // Define REDIRECT_TIMEOUT globally
-const REDIRECT_TIMEOUT = 15000; // 15 seconds for robust redirect monitoring
+const REDIRECT_TIMEOUT = 15000; // baseline cap for slow redirects
+const FAST_REDIRECT_TIMEOUT = 8000; // faster cap for well-behaved brands
 const CSV_FAILURE_DIR = path.join(process.cwd(), "failures");
 const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, "-");
 const CSV_HEADER = 'Project,Source Page,CTA Text,Issue Type,Details,Failing URL\n';
@@ -58,15 +59,106 @@ function appendFailureRow(projectName: SiteName, csvRow: string) {
 
 // Function to safely escape strings for CSV (Carried over from original script)
 function csvEscape(str: string | null | undefined) {
-    if (str === null || str === undefined) return '""';
-    return `"${String(str).replace(/"/g, '""').replace(/(\r\n|\n|\r)/gm, ' ')}"`;
+    if (str === null || str === undefined) return '""';
+    return `"${String(str).replace(/"/g, '""').replace(/(\r\n|\n|\r)/gm, ' ')}"`;
 }
 
-// ➡️ Utility functions (Carried over from original script)
+function stripDiacritics(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
 
-async function humanDelay(page: any, minMs: number = 500, maxMs: number = 2000): Promise<void> {
-    const delay = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
-    await page.waitForTimeout(delay);
+function normalizeUrlForMatch(url: string) {
+  const lowered = url.toLowerCase();
+  try {
+    return decodeURIComponent(lowered);
+  } catch {
+    return lowered;
+  }
+}
+
+const SLUG_STOP_TOKENS = new Set(["casino", "tc", "bn", "lc", "cp"]);
+const FAST_REDIRECT_TOKENS = new Set([
+  "napoleon",
+  "winmasters",
+  "win2",
+  "winner",
+  "fortuna",
+  "poker",
+  "superbet",
+  "12xbet",
+  "bilion",
+  "netbet",
+]);
+
+const ASSET_HOST_PATTERNS = [
+  /fonts\.googleapis\.com/i,
+  /fonts\.gstatic\.com/i,
+  /www\.googletagmanager\.com/i,
+  /googlesyndication\.com/i,
+  /doubleclick\.net/i,
+  /static\.cloudflareinsights\.com/i,
+  /www\.google-analytics\.com/i,
+  /connect\.facebook\.net/i,
+];
+
+function isIgnorableAssetUrl(url: string) {
+  try {
+    const { hostname } = new URL(url);
+    return ASSET_HOST_PATTERNS.some((pattern) => pattern.test(hostname));
+  } catch {
+    return false;
+  }
+}
+
+async function waitForAffiliateResponse(popup: Page, deadlineTs: number): Promise<Response> {
+  while (true) {
+    const remaining = deadlineTs - Date.now();
+    if (remaining <= 0) {
+      throw new Error("Timeout waiting for affiliate response");
+    }
+
+    const response = await popup.waitForResponse(
+      (r: Response) => r.url().startsWith("http"),
+      { timeout: remaining },
+    );
+
+    const candidateUrl = response.url();
+    if (isIgnorableAssetUrl(candidateUrl)) {
+      console.log(`[REDIRECT] Ignoring asset response: ${candidateUrl}`);
+      continue;
+    }
+
+    return response;
+  }
+}
+
+function extractSlugTokensFromPath(pathValue?: string | null): string[] {
+  if (!pathValue) return [];
+  const [pathname] = pathValue.split("?");
+  const segments = pathname.split("/").filter(Boolean);
+  if (segments.length === 0) return [];
+
+  const rawSlug = stripDiacritics(segments[segments.length - 1].toLowerCase());
+  if (!rawSlug) return [];
+
+  const rawTokens = rawSlug.split(/[^a-z0-9]+/).filter(Boolean);
+  const filteredTokens = rawTokens
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2 && !SLUG_STOP_TOKENS.has(token));
+
+  console.log(`[TOKENS] Extracted slug tokens: ${filteredTokens.join(", ")}`);
+  return Array.from(new Set(filteredTokens));
+}
+
+function resolveRedirectTimeout(slugTokens: string[]) {
+  return slugTokens.some((token) => FAST_REDIRECT_TOKENS.has(token))
+    ? FAST_REDIRECT_TIMEOUT
+    : REDIRECT_TIMEOUT;
+}
+
+async function humanDelay(page: Page, minMs: number = 500, maxMs: number = 2000): Promise<void> {
+  const delay = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+  await page.waitForTimeout(delay);
 }
 
 async function removeWebdriverDetection(page: Page) {
@@ -169,6 +261,21 @@ async function runPageAudit(
                 
                 // Filter links that do not match the affiliate pattern
                 if (!path.startsWith("/") || !affiliateUrlPattern.test(path)) return null; 
+
+                const element = n as HTMLElement;
+                const normalize = (value?: string | null) => value ? value.trim().replace(/\s+/g, " ") : "";
+
+                let text = normalize(element.innerText || element.textContent);
+                if (!text) text = normalize(element.getAttribute("title"));
+                if (!text) text = normalize(element.getAttribute("aria-label"));
+                if (!text) {
+                    const imgWithAlt = element.querySelector("img[alt]");
+                    if (imgWithAlt) {
+                        text = normalize(imgWithAlt.getAttribute("alt"));
+                    }
+                }
+                if (!text) text = normalize(element.getAttribute("data-casino") || element.getAttribute("data-casino-name"));
+                if (!text) text = "No Text";
                 
                 return {
                     href: href,
@@ -176,13 +283,25 @@ async function runPageAudit(
                     hasDataCasino: n.hasAttribute("data-casino") || n.hasAttribute("data-casino-name"),
                     hasTrackingAttributes: n.classList.contains("affiliate-meta-link") && (n.hasAttribute("data-casino") || n.hasAttribute("data-casino-name")),
                     target: n.getAttribute("target"),
-                    text: (n as HTMLElement).textContent?.trim().replace(/\s+/g, " ") || "No Text",
-                    selector: 'a[href="' + href + '"]'
+                    text,
+                    selector: 'a[href="' + href + '"]',
+                    normalizedPath: path,
                 };
             }).filter((item) => item !== null);
         }, { affiliateUrlPattern: cfg.affiliateUrlPattern, baseURL: baseURL });
+
+        const dedupedLinkData = (() => {
+            const seen = new Set<string>();
+            return allLinkData.filter((item) => {
+                const key = item.normalizedPath || item.href || item.selector;
+                if (!key) return true;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+        })();
         
-        const affiliateLinkCount = allLinkData.length;
+        const affiliateLinkCount = dedupedLinkData.length;
         
         if (affiliateLinkCount === 0) {
             console.warn(`[${projectName}] ⚠️ WARN No affiliate links found matching pattern on ${currentPath}`);
@@ -191,10 +310,12 @@ async function runPageAudit(
         
         // 3. Process CTA Data and Execute Audit
         for (let i = 0; i < affiliateLinkCount; i++) {
-            const { href, target, text, hasTrackingAttributes, hasClass, hasDataCasino, selector } = allLinkData[i];
+            const { href, target, text, hasTrackingAttributes, hasClass, hasDataCasino, selector, normalizedPath } = dedupedLinkData[i];
             
             pageElementCount++;
             const ctaId = `LINK #${pageElementCount} (${text})`;
+            const slugTokens = extractSlugTokensFromPath(normalizedPath || href || "");
+            const redirectTimeoutMs = resolveRedirectTimeout(slugTokens);
 
             // --- Preliminary Checks ---
             let skipAudit: boolean = false; 
@@ -232,23 +353,22 @@ async function runPageAudit(
                 let popup: Page | undefined;
 
                 try {
-                    const [newPopup, response] = await Promise.all([
+                    const redirectDeadline = Date.now() + redirectTimeoutMs;
+
+                    const [newPopup] = await Promise.all([
                         auditPage.waitForEvent("popup", { timeout: REDIRECT_TIMEOUT }),
                         auditPage.evaluate((s) => {
                             const element = document.querySelector(s);
                             if (element) { (element as HTMLAnchorElement).click(); }
                         }, selector),
-                    ])
-                    .then(([p]) => {
-                        popup = p;
-                        return Promise.all([
-                            popup,
-                            popup.waitForResponse((r: Response) => r.url().startsWith("http"), { timeout: REDIRECT_TIMEOUT }),
-                        ]);
-                    }).catch(async (error) => {
-                        if (popup) { await popup.close().catch(() => {}); }
-                        throw error;
-                    });
+                    ]);
+
+                    popup = newPopup;
+
+                    const response = await waitForAffiliateResponse(popup, redirectDeadline);
+
+                    const navigationTimeout = Math.min(redirectTimeoutMs, Math.max(500, redirectDeadline - Date.now()));
+                    await popup.waitForNavigation({ waitUntil: "domcontentloaded", timeout: navigationTimeout }).catch(() => null);
 
                     const request = response.request();
                     const chain: any = (request as any).redirectChain;
@@ -266,7 +386,7 @@ async function runPageAudit(
                         }
                     }
 
-                    const finalUrl = response.url();
+                    const finalUrl = popup.url() || response.url();
                     const finalOrigin = new URL(finalUrl).origin;
                     const projectOrigin = new URL(baseURL).origin;
 
@@ -278,7 +398,24 @@ async function runPageAudit(
                         softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: "Final URL is Internal", details: csvDetail, csvRow: csvRow });
                         console.error(`[${projectName}] ❌ FAIL ${ctaId} from ${currentPath}: Final URL is Internal - ${finalUrl}`);
                     } else {
-                        console.log(`[${projectName}] ✅ PASS ${ctaId} from ${currentPath} -> Redirected to ${finalOrigin}`);
+                        if (slugTokens.length > 0) {
+                            const normalizedFinalUrl = normalizeUrlForMatch(finalUrl);
+                            const matchedToken = slugTokens.find((token) => normalizedFinalUrl.includes(token));
+
+                            if (!matchedToken) {
+                                const csvDetail = `Slug tokens (${slugTokens.join(', ')}) missing from redirect URL: ${finalUrl}`;
+                                const csvRow = `${csvEscape(projectName)},${csvEscape(currentPath)},${csvEscape(text ?? '')},${csvEscape("Redirect Brand Mismatch")},${csvEscape(csvDetail)},${csvEscape(href ?? 'N/A')}`;
+                                appendFailureRow(projectName, csvRow);
+
+                                softFailures.push({ sourcePath: currentPath, ctaText: ctaId, reason: "Redirect Brand Mismatch", details: csvDetail, csvRow: csvRow });
+                                console.error(`[${projectName}] ❌ FAIL ${ctaId} from ${currentPath}: Redirect Brand Mismatch - ${csvDetail}`);
+                                continue;
+                            }
+
+                            console.log(`[${projectName}] ✅ PASS ${ctaId} from ${currentPath} -> Redirected to ${finalOrigin} (matched token: "${matchedToken}")`);
+                        } else {
+                            console.log(`[${projectName}] ✅ PASS ${ctaId} from ${currentPath} -> Redirected to ${finalOrigin}`);
+                        }
                     }
 
                 } catch (error: any) {
