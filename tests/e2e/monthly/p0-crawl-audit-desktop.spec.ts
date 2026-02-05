@@ -16,7 +16,8 @@ type SoftFailure = {
 };
 
 // Define REDIRECT_TIMEOUT globally
-const REDIRECT_TIMEOUT = 15000; // 15 seconds for robust redirect monitoring
+const REDIRECT_TIMEOUT = 15000; // baseline cap for slow redirects
+const FAST_REDIRECT_TIMEOUT = 8000; // faster cap for well-behaved brands
 const CSV_FAILURE_DIR = path.join(process.cwd(), "failures");
 const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, "-");
 const CSV_HEADER = 'Project,Source Page,CTA Text,Issue Type,Details,Failing URL\n';
@@ -26,6 +27,12 @@ function getCsvFilePath(projectName: SiteName) {
         CSV_FAILURE_DIR,
         `${projectName}_crawl-audit_${RUN_TIMESTAMP}.csv`,
     );
+}
+
+function resolveRedirectTimeout(slugTokens: string[]) {
+  return slugTokens.some((token) => FAST_REDIRECT_TOKENS.has(token))
+    ? FAST_REDIRECT_TIMEOUT
+    : REDIRECT_TIMEOUT;
 }
 
 function ensureCsvInitialized(projectName: SiteName) {
@@ -65,6 +72,18 @@ function normalizeUrlForMatch(url: string) {
 }
 
 const SLUG_STOP_TOKENS = new Set(["casino", "tc", "bn", "lc", "cp"]);
+const FAST_REDIRECT_TOKENS = new Set([
+  "napoleon",
+  "winmasters",
+  "win2",
+  "winner",
+  "fortuna",
+  "poker",
+  "superbet",
+  "12xbet",
+  "bilion",
+  "netbet",
+]);
 
 const ASSET_HOST_PATTERNS = [
   /fonts\.googleapis\.com/i,
@@ -290,6 +309,7 @@ async function runPageAudit(
       pageElementCount++;
       const ctaId = `LINK #${pageElementCount} (${text})`;
       const slugTokens = extractSlugTokensFromPath(normalizedPath || href || "");
+      const redirectTimeoutMs = resolveRedirectTimeout(slugTokens);
 
       // --- Preliminary Checks ---
       let skipAudit: boolean = false;
@@ -327,7 +347,7 @@ async function runPageAudit(
         let popup: Page | undefined;
 
         try {
-          const redirectDeadline = Date.now() + REDIRECT_TIMEOUT;
+          const redirectDeadline = Date.now() + redirectTimeoutMs;
 
           const [newPopup] = await Promise.all([
             auditPage.waitForEvent("popup", { timeout: REDIRECT_TIMEOUT }),
@@ -341,7 +361,7 @@ async function runPageAudit(
 
           const response = await waitForAffiliateResponse(popup, redirectDeadline);
 
-          const navigationTimeout = Math.min(8000, Math.max(500, redirectDeadline - Date.now()));
+          const navigationTimeout = Math.min(redirectTimeoutMs, Math.max(500, redirectDeadline - Date.now()));
           await popup.waitForNavigation({ waitUntil: "domcontentloaded", timeout: navigationTimeout }).catch(() => null);
 
           const request = response.request();
