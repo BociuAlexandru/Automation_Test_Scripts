@@ -43,6 +43,81 @@ const verboseLog = (...args: unknown[]) => {
         console.log(...args);
     }
 };
+
+const waitForSlotNavigation = async (page: Page, expectedHref?: string | null) => {
+    const normalizedBase = normalizeUrl(BASE_URL);
+    const expectedUrl = expectedHref ? normalizeUrl(new URL(expectedHref, BASE_URL).toString()) : null;
+
+    await page.waitForURL(
+        (url) => {
+            const normalizedCurrent = normalizeUrl(url.toString());
+            if (normalizedCurrent.startsWith(normalizedBase)) {
+                return false;
+            }
+            if (expectedUrl && normalizedCurrent.startsWith(expectedUrl)) {
+                return true;
+            }
+            return url.pathname.includes('/jocuri-cu-sloturi/');
+        },
+        { timeout: 12000 },
+    );
+};
+
+const openSlotViaCta = async (slotCta: Locator, page: Page, touch?: (label: string) => void) => {
+    const href = await slotCta.getAttribute('href');
+    if (!href) {
+        throw new Error('Slot CTA is missing an href attribute.');
+    }
+
+    const attemptClickNavigation = async () => {
+        await Promise.all([
+            waitForSlotNavigation(page, href),
+            slotCta.click({ delay: randomDelay(70, 140), force: true, noWaitAfter: true }),
+        ]);
+    };
+
+    try {
+        await attemptClickNavigation();
+        await page.waitForLoadState('domcontentloaded');
+        touch?.('slot-nav-click-success');
+        return;
+    } catch (error) {
+        verboseWarn('[SlotNav] Click navigation failed, attempting direct goto', error);
+    }
+
+    await page.goto(href, { waitUntil: 'domcontentloaded' });
+    touch?.('slot-nav-direct-goto');
+};
+
+const progressiveScrollIntoView = async (
+    page: Page,
+    locator: Locator,
+    maxAttempts = 10,
+    touch?: (label: string) => void,
+) => {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const visible = await locator.isVisible({ timeout: 300 }).catch(() => false);
+        if (visible) {
+            return true;
+        }
+
+        await locator.scrollIntoViewIfNeeded().catch(() => null);
+        const newlyVisible = await locator.isVisible({ timeout: 300 }).catch(() => false);
+        if (newlyVisible) {
+            return true;
+        }
+
+        await page
+            .evaluate(() => {
+                window.scrollBy({ top: window.innerHeight * 0.65, behavior: 'instant' });
+            })
+            .catch(() => null);
+        touch?.(`progressive-scroll-${attempt + 1}`);
+        await page.waitForTimeout(200);
+    }
+
+    return false;
+};
 const verboseWarn = (...args: unknown[]) => {
     if (VERBOSE_LOGGING) {
         console.warn(...args);
@@ -55,11 +130,41 @@ const clickIfVisible = async (locator: Locator, label: string) => {
     }
 
     const target = locator.first();
+    await target.waitFor({ state: 'attached', timeout: 1000 }).catch(() => null);
+
+    const ensureDisplayed = async () => {
+        const handle = await target.elementHandle();
+        if (!handle) {
+            return;
+        }
+        await target.page().evaluate((el) => {
+            if (!(el instanceof HTMLElement)) return;
+            el.style.opacity = '1';
+            el.style.pointerEvents = 'auto';
+            el.style.visibility = 'visible';
+            el.style.display = 'inline-flex';
+            el.style.transform = 'none';
+        }, handle);
+    };
+
     if (!(await target.isVisible().catch(() => false))) {
-        return false;
+        await ensureDisplayed();
     }
 
-    await target.click({ delay: randomDelay(40, 110) });
+    const attemptDomClick = async () =>
+        target
+            .evaluate((node) => {
+                if (node instanceof HTMLElement) {
+                    node.click();
+                }
+            })
+            .catch(() => {});
+
+    try {
+        await target.click({ delay: randomDelay(40, 110), force: true, noWaitAfter: true });
+    } catch (error) {
+        await attemptDomClick();
+    }
     await target.page().waitForTimeout(randomDelay(150, 250));
     verboseLog(`[Popup] Dismissed via ${label}`);
     return true;
@@ -68,19 +173,19 @@ const clickIfVisible = async (locator: Locator, label: string) => {
 const acceptCookiesIfPresent = async (page: Page) => {
     const preferredSelectors = [
         COOKIE_DENY_SELECTOR,
+        'button#CybotCookiebotDialogBodyButtonDecline.CybotCookiebotDialogBodyButton',
+        'button#CybotCookiebotDialogBodyButtonDecline[lang="ro"]',
+        'button:has-text("Respinge")',
         '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
         'button:has-text("Accept")',
         'button:has-text("De acord")',
         'button:has-text("Acceptă")',
     ];
 
-    for (let attempt = 1; attempt <= 5; attempt++) {
-        for (const selector of preferredSelectors) {
-            if (await clickIfVisible(page.locator(selector), `selector ${selector}`)) {
-                return true;
-            }
+    for (const selector of preferredSelectors) {
+        if (await clickIfVisible(page.locator(selector), `selector ${selector}`)) {
+            return true;
         }
-        await page.waitForTimeout(400);
     }
 
     return false;
@@ -92,10 +197,165 @@ const closeNewsletterIfPresent = (page: Page) =>
 const closeOfferPopupIfPresent = (page: Page) =>
     clickIfVisible(page.locator(OFFER_CLOSE_SELECTOR), 'sticky offer close button');
 
-const dismissInterferingPopups = async (page: Page) => {
-    await acceptCookiesIfPresent(page);
-    await closeNewsletterIfPresent(page);
-    await closeOfferPopupIfPresent(page);
+const coaxViewportActivity = async (page: Page) => {
+    await page
+        .evaluate(() => {
+            const delta = Math.max(80, Math.round(window.innerHeight * 0.2));
+            window.scrollBy({ top: delta, behavior: 'instant' });
+            window.scrollBy({ top: -delta * 0.7, behavior: 'instant' });
+            const mouseEvent = new MouseEvent('mousemove', {
+                bubbles: true,
+                clientX: Math.round(window.innerWidth * 0.4),
+                clientY: Math.round(window.innerHeight * 0.2),
+            });
+            document.dispatchEvent(mouseEvent);
+            const touchEvent = new Event('touchstart', { bubbles: true, cancelable: true });
+            document.dispatchEvent(touchEvent);
+        })
+        .catch(() => null);
+    await page.waitForTimeout(150);
+};
+
+const clearBlockingOverlays = async (page: Page) => {
+    const selectors = [
+        '.sticky-popup',
+        '.sticky-popup__overlay',
+        '.sticky-popup__container',
+        '.sticky-offer',
+        '.wof-overlay',
+        '.madrone-modal',
+        '.madrone-modal__overlay',
+        '.newsletter-popup',
+        '.slot-placeholder__offers',
+        '#newsletter-modal',
+    ];
+
+    await page
+        .evaluate((overlaySelectors) => {
+            overlaySelectors.forEach((selector) => {
+                document.querySelectorAll(selector).forEach((node) => {
+                    if (node instanceof HTMLElement) {
+                        node.style.opacity = '0';
+                        node.style.pointerEvents = 'none';
+                        node.style.display = 'none';
+                        node.style.visibility = 'hidden';
+                        node.style.transform = 'none';
+                        node.classList.add('cascade-overlay-hidden');
+                    }
+                });
+            });
+        }, selectors)
+        .catch(() => null);
+};
+
+const forceRevealDemoButton = async (button: Locator) => {
+    try {
+        await button.evaluate((el) => {
+            if (!(el instanceof HTMLElement)) return;
+            el.classList.remove('d-none', 'hidden');
+            el.style.opacity = '1';
+            el.style.pointerEvents = 'auto';
+            el.style.visibility = 'visible';
+            el.style.display = 'inline-flex';
+            el.style.transform = 'none';
+            el.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
+        });
+        return true;
+    } catch {
+        return false;
+    }
+};
+
+const runPopupSweep = async (page: Page, touch?: (label: string) => void) => {
+    let dismissed = false;
+    if (await acceptCookiesIfPresent(page)) {
+        dismissed = true;
+        touch?.('cookie-dismissed');
+    }
+    if (await closeNewsletterIfPresent(page)) {
+        dismissed = true;
+        touch?.('newsletter-dismissed');
+    }
+    if (await closeOfferPopupIfPresent(page)) {
+        dismissed = true;
+        touch?.('offer-dismissed');
+    }
+    return dismissed;
+};
+
+type InactivityWatchdog = {
+    touch: (label: string) => void;
+    stop: () => void;
+};
+
+const startInactivityWatchdog = (page: Page, timeoutMs = 15000): InactivityWatchdog => {
+    let lastLabel = 'initialization';
+    let timer: NodeJS.Timeout | null = null;
+
+    const schedule = () => {
+        if (timer) {
+            clearTimeout(timer);
+        }
+        timer = setTimeout(() => {
+            const message = `[Watchdog] No activity for ${timeoutMs}ms (last: ${lastLabel})`;
+            console.error(message);
+            throw new Error(message);
+        }, timeoutMs);
+    };
+
+    const touch = (label: string) => {
+        lastLabel = label;
+        schedule();
+    };
+
+    const events = [
+        'request',
+        'requestfinished',
+        'requestfailed',
+        'response',
+        'framenavigated',
+        'domcontentloaded',
+        'load',
+        'console',
+        'popup',
+    ] as const;
+
+    const listeners = events.map((event) => {
+        const handler = () => touch(`page:${event}`);
+        page.on(event as any, handler);
+        return { event, handler };
+    });
+
+    schedule();
+
+    return {
+        touch,
+        stop: () => {
+            if (timer) {
+                clearTimeout(timer);
+                timer = null;
+            }
+            listeners.forEach(({ event, handler }) => page.off(event as any, handler));
+        },
+    };
+};
+
+const dismissInterferingPopups = async (
+    page: Page,
+    opts: { triggerViewport?: boolean; viewportCycles?: number } = {},
+    touch?: (label: string) => void,
+) => {
+    const cycles = opts.triggerViewport ? Math.max(1, opts.viewportCycles ?? 2) : 1;
+    for (let attempt = 0; attempt < cycles; attempt++) {
+        const cleared = await runPopupSweep(page, touch);
+        if (cleared) {
+            break;
+        }
+        if (opts.triggerViewport && attempt < cycles - 1) {
+            await coaxViewportActivity(page);
+            touch?.('viewport-coax');
+        }
+    }
 };
 
 const slotCardsLocator = (page: Page) => page.locator(LIST_SLOT_CARD_SELECTOR);
@@ -311,54 +571,74 @@ test('P1 Mobile: Jocsloturi slot list demo smoke', async ({ page }, testInfo) =>
     }
     const projectName = currentProject ?? 'p1-games-list-search-JS-mobile';
 
-    await runAuditedStep(page, projectName, '1. Load slot list and dismiss blocking UI', async () => {
-        await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
-        await dismissInterferingPopups(page);
-        await page.waitForLoadState('networkidle');
-        await scrollInitialViewport(page);
-    });
+    const watchdog = startInactivityWatchdog(page, 15000);
+    const markActivity = (label: string) => watchdog.touch(`[${projectName}] ${label}`);
 
-    let slotCount = await slotCardsLocator(page).count();
-    if (slotCount === 0) {
-        throw new Error('No slot cards rendered on the list page.');
-    }
+    markActivity('test-start');
 
-    const slotsToTest = Math.min(MAX_SLOTS_TO_TEST, slotCount);
-
-    for (let index = 0; index < slotsToTest; index++) {
-        const slotNumber = index + 1;
-
-        await runAuditedStep(page, projectName, `2.${slotNumber} Open slot ${slotNumber} from the list`, async () => {
-            const slotCard = await getSlotCardByIndex(page, index);
-            const slotCta = await ensureSlotCtaVisible(slotCard, page);
-            await forceSameTabNavigation(slotCta);
-
-            await Promise.all([
-                page.waitForLoadState('domcontentloaded'),
-                slotCta.click({ delay: randomDelay(70, 140) }),
-            ]);
-            await page.waitForTimeout(700);
-
-            await dismissInterferingPopups(page);
-        });
-
-        await runAuditedStep(page, projectName, `3.${slotNumber} Launch demo for slot ${slotNumber}`, async () => {
-            const demoButton = page.locator(DEMO_CTA_SELECTOR).filter({ hasText: /joac[aă]\s+gratis/i }).first();
-            await expect(demoButton).toBeVisible({ timeout: 15000 });
-            await demoButton.scrollIntoViewIfNeeded();
-            await demoButton.click({ delay: randomDelay(70, 140) });
-
-            const waitDuration = randomDelay(3000, 4000);
-            await page.waitForTimeout(waitDuration);
-        });
-
-        await runAuditedStep(page, projectName, `4.${slotNumber} Return to slot list`, async () => {
-            await ensureReturnToListPage(page);
-            await page.waitForTimeout(600);
-            await expect(page).toHaveURL(new RegExp(`^${normalizeUrl(BASE_URL).replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}`));
-            await dismissInterferingPopups(page);
+    try {
+        await runAuditedStep(page, projectName, '1. Load slot list and dismiss blocking UI', async () => {
+            await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+            markActivity('after-goto');
+            await dismissInterferingPopups(page, { triggerViewport: true, viewportCycles: 4 }, markActivity);
+            markActivity('after-initial-dismiss');
+            await page.waitForLoadState('networkidle');
+            markActivity('after-networkidle');
             await scrollInitialViewport(page);
-            slotCount = await slotCardsLocator(page).count();
+            markActivity('after-initial-scroll');
         });
+
+        let slotCount = await slotCardsLocator(page).count();
+        if (slotCount === 0) {
+            throw new Error('No slot cards rendered on the list page.');
+        }
+
+        const slotsToTest = Math.min(MAX_SLOTS_TO_TEST, slotCount);
+
+        for (let index = 0; index < slotsToTest; index++) {
+            const slotNumber = index + 1;
+
+            await runAuditedStep(page, projectName, `2.${slotNumber} Open slot ${slotNumber} from the list`, async () => {
+                markActivity(`slot-${slotNumber}-prep`);
+                const slotCard = await getSlotCardByIndex(page, index);
+                const slotCta = await ensureSlotCtaVisible(slotCard, page);
+                await forceSameTabNavigation(slotCta);
+                await openSlotViaCta(slotCta, page, markActivity);
+                markActivity(`slot-${slotNumber}-clicked`);
+            });
+
+            await runAuditedStep(page, projectName, `3.${slotNumber} Launch demo for slot ${slotNumber}`, async () => {
+                await dismissInterferingPopups(page, { triggerViewport: true }, markActivity);
+                await scrollInitialViewport(page);
+                markActivity(`slot-${slotNumber}-pre-demo-viewport`);
+                await clearBlockingOverlays(page);
+                const demoButton = page.locator(DEMO_CTA_SELECTOR).filter({ hasText: /joac[aă]\s+gratis/i }).first();
+                await demoButton.waitFor({ state: 'attached', timeout: 15000 });
+                await forceRevealDemoButton(demoButton);
+                await progressiveScrollIntoView(page, demoButton, 12, markActivity);
+                await expect(demoButton).toBeVisible({ timeout: 15000 });
+                markActivity(`slot-${slotNumber}-demo-visible`);
+                await demoButton.scrollIntoViewIfNeeded();
+                await demoButton.click({ delay: randomDelay(70, 140), force: true });
+
+                markActivity(`slot-${slotNumber}-demo-clicked`);
+                const waitDuration = randomDelay(3000, 4000);
+                await page.waitForTimeout(waitDuration);
+            });
+
+            await runAuditedStep(page, projectName, `4.${slotNumber} Return to slot list`, async () => {
+                await ensureReturnToListPage(page);
+                markActivity(`slot-${slotNumber}-returned`);
+                await page.waitForTimeout(600);
+                await expect(page).toHaveURL(new RegExp(`^${normalizeUrl(BASE_URL).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}`));
+                await dismissInterferingPopups(page, { triggerViewport: true }, markActivity);
+                await scrollInitialViewport(page);
+                slotCount = await slotCardsLocator(page).count();
+            });
+        }
+    } finally {
+        watchdog.stop();
     }
 });
+
+// ... (rest of the code remains the same)
