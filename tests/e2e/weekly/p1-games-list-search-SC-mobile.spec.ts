@@ -28,12 +28,13 @@ const CSV_FAILURE_DIR = path.join(process.cwd(), 'failures'); // Directory for C
 const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-'); // Timestamp for CSV file naming.
 const CSV_HEADER = 'Project,Step,Details,URL,Error Message\n'; // CSV header for failure logs.
 
-const SEARCH_INPUT_SELECTOR = 'form[role="search"] input.orig[aria-label="Search input"]'; // Search input selector.
+const SEARCH_CONTAINER_SELECTOR = '#ajaxsearchlite1'; // Container for the AJAX search widget.
+const SEARCH_INPUT_SELECTOR = `${SEARCH_CONTAINER_SELECTOR} form[role="search"] input.orig[aria-label="Search input"]`; // Search input selector.
+const SEARCH_MAGNIFIER_SELECTOR = `${SEARCH_CONTAINER_SELECTOR} button.promagnifier`; // Search magnifier button for mobile.
 const FIRST_RESULT_SELECTOR = 'a.mb-3[href*="sizzling-hot-deluxe"]'; // First search result selector.
 const DEMO_CTA_SELECTOR = 'a.btn.btn--1.border-0.iframeBtn'; // Demo CTA selector.
 const CLOSE_POPUP_SELECTOR = 'svg.close-modal'; // Close popup selector.
 const DEMO_IFRAME_SELECTOR = 'iframe[src*="gamelaunch.everymatrix.com"]'; // Demo iframe selector.
-
 const COOKIE_ALLOW_ALL_SELECTOR = '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll'; // Cookie allow all selector.
 const COOKIE_GENERIC_ACCEPT_SELECTOR = '#CybotCookiebotDialogBodyButtonAccept'; // Cookie generic accept selector.
 const COOKIE_IFRAME_SELECTOR = 'iframe[id*="CybotCookiebotDialog"], iframe[src*="cookiebot"]'; // Cookie iframe selector.
@@ -123,13 +124,37 @@ const handleAmbientPopups = async (page: Page) => {
 const typeLikeHuman = async (locator: Locator, text: string) => {
     const input = locator.first();
     await input.waitFor({ state: 'visible', timeout: 15000 });
-    await input.scrollIntoViewIfNeeded();
+    await input.scrollIntoViewIfNeeded().catch(() => null);
+    await input.focus().catch(() => null);
     await input.click({ delay: randomDelay(80, 140) });
     await input.fill('');
     for (const char of text) {
-        await input.page().keyboard.type(char, { delay: randomDelay(70, 150) });
+        await input.type(char, { delay: randomDelay(70, 140) });
     }
 }; // Type text like a human.
+
+const ensureSearchInputReady = async (page: Page) => {
+    const container = page.locator(SEARCH_CONTAINER_SELECTOR).first();
+    await container.waitFor({ state: 'attached', timeout: 15000 }).catch(() => null);
+    await container.scrollIntoViewIfNeeded().catch(() => null);
+
+    const searchInput = page.locator(SEARCH_INPUT_SELECTOR).first();
+    await searchInput.waitFor({ state: 'attached', timeout: 15000 });
+
+    let isVisible = await searchInput.isVisible().catch(() => false);
+    if (!isVisible) {
+        const magnifier = page.locator(SEARCH_MAGNIFIER_SELECTOR).first();
+        if ((await magnifier.count()) > 0 && (await magnifier.isVisible().catch(() => false))) {
+            await magnifier.click({ delay: randomDelay(60, 110), force: true }).catch(() => null);
+            await page.waitForTimeout(200);
+            isVisible = await searchInput.isVisible().catch(() => false);
+        }
+    }
+
+    await searchInput.waitFor({ state: 'visible', timeout: 15000 });
+    await searchInput.scrollIntoViewIfNeeded().catch(() => null);
+    return searchInput;
+};
 
 const forceSameTabNavigation = async (locator: Locator) => {
     await locator.evaluate((node) => {
@@ -255,21 +280,17 @@ test('P1 Mobile: SC slot search and demo flow', async ({ page }, testInfo) => {
 
     // Step 2: Scroll until search field is visible
     await runAuditedStep(page, projectName, '2. Scroll to search field', async () => {
-        const searchInput = page.locator(SEARCH_INPUT_SELECTOR);
-        if ((await searchInput.count()) === 0) {
-            await page.evaluate(() => window.scrollTo({ top: 450, behavior: 'instant' }));
-        }
-        await searchInput.first().scrollIntoViewIfNeeded().catch(() => null);
+        await ensureSearchInputReady(page);
         await handleAmbientPopups(page);
         verboseLog('Search input is in viewport.');
     });
 
     // Step 3: Enter search phrase and submit with Enter
     await runAuditedStep(page, projectName, '3. Enter search phrase and submit', async () => {
-        const searchInput = page.locator(SEARCH_INPUT_SELECTOR);
+        const searchInput = await ensureSearchInputReady(page);
         await typeLikeHuman(searchInput, SEARCH_PHRASE);
         await handleAmbientPopups(page);
-        await page.keyboard.press('Enter');
+        await searchInput.press('Enter');
         await page.waitForLoadState('domcontentloaded');
         await page.waitForTimeout(1000);
         verboseLog('Search submitted.');
