@@ -143,6 +143,12 @@ export function stripDiacritics(text: string): string {
     return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+export function collapseToAlphaNumeric(text: string): string {
+    return stripDiacritics(text)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '');
+}
+
 export function splitCamelCaseAndNumbers(text: string): string[] {
     let cleanedText = text.replace(/([a-z])([A-Z])/g, '$1 $2');
     cleanedText = cleanedText
@@ -151,13 +157,69 @@ export function splitCamelCaseAndNumbers(text: string): string[] {
     return cleanedText.trim().toLowerCase().split(/\s+/).filter(Boolean);
 }
 
+const COMMON_CASINO_SUFFIXES = ['bet', 'casino', 'cazino', 'slots', 'gaming', 'games', 'club', 'play'];
+
+function removeCommonSuffix(token: string): string {
+    for (const suffix of COMMON_CASINO_SUFFIXES) {
+        if (token.endsWith(suffix) && token.length - suffix.length >= 3) {
+            return token.slice(0, token.length - suffix.length);
+        }
+    }
+    return token;
+}
+
 export function checkH1Content(sourceText: string, h1Text: string): boolean {
     const normalizedH1 = stripDiacritics(h1Text).toLowerCase();
+    const collapsedH1 = collapseToAlphaNumeric(h1Text);
     const sourceTokens = splitCamelCaseAndNumbers(sourceText)
         .map(token => stripDiacritics(token))
         .filter(token => token.length >= 2 && /[a-z0-9]/.test(token));
-    if (sourceTokens.length === 0) return true;
-    return sourceTokens.some(token => normalizedH1.includes(token));
+
+    if (sourceTokens.length === 0) {
+        return true;
+    }
+
+    const buildVariants = (token: string): string[] => {
+        const normalizedToken = token.toLowerCase();
+        const collapsedToken = collapseToAlphaNumeric(token);
+        const trimmedToken = removeCommonSuffix(normalizedToken);
+        const collapsedTrimmed = collapseToAlphaNumeric(trimmedToken);
+        const variants = new Set<string>();
+        if (normalizedToken.length >= 2) variants.add(normalizedToken);
+        if (collapsedToken.length >= 3) variants.add(collapsedToken);
+        if (trimmedToken.length >= 2) variants.add(trimmedToken);
+        if (collapsedTrimmed.length >= 3) variants.add(collapsedTrimmed);
+        return Array.from(variants);
+    };
+
+    const tokenMatches = sourceTokens.some(token => {
+        return buildVariants(token).some(variant => {
+            const collapsedVariant = collapseToAlphaNumeric(variant);
+            return (
+                (variant.length >= 2 && normalizedH1.includes(variant)) ||
+                (collapsedVariant.length >= 3 &&
+                    (collapsedH1.includes(collapsedVariant) || collapsedVariant.includes(collapsedH1)))
+            );
+        });
+    });
+
+    if (tokenMatches) {
+        return true;
+    }
+
+    const collapsedSource = collapseToAlphaNumeric(sourceText);
+    const trimmedSource = removeCommonSuffix(sourceText.toLowerCase());
+    const collapsedTrimmedSource = collapseToAlphaNumeric(trimmedSource);
+
+    if (collapsedSource.length >= 3 && collapsedH1.includes(collapsedSource)) {
+        return true;
+    }
+
+    if (collapsedTrimmedSource.length >= 3 && collapsedH1.includes(collapsedTrimmedSource)) {
+        return true;
+    }
+
+    return false;
 }
 
 export async function humanizePage(page: Page) {

@@ -60,7 +60,7 @@ export default defineConfig({
     
     projects: [
         // Projects are ordered to start with casino.com.ro
-       { name: 'casino.com.ro', use: { baseURL: 'https://casino.com.ro' } },
+       { name: 'casino.com.ro', use: { baseURL: 'https://casino.com.ro' } },
        { name: 'beturi', use: { baseURL: 'https://beturi.ro' } },
        { name: 'jocsloturi', use: { baseURL: 'https://jocsloturi.ro' } },
        { name: 'jocpacanele', use: { baseURL: 'https://jocpacanele.ro' } },
