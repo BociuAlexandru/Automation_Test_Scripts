@@ -157,6 +157,40 @@ export function splitCamelCaseAndNumbers(text: string): string[] {
     return cleanedText.trim().toLowerCase().split(/\s+/).filter(Boolean);
 }
 
+const ROMANIAN_GRAMMAR_SUFFIXES = [
+    'urilor',
+    'iilor',
+    'iile',
+    'ului',
+    'elor',
+    'ilor',
+    'urile',
+    'lor',
+    'lele',
+    'ele',
+    'ile',
+    'rei',
+    'ii',
+    'ul',
+    'le',
+    'i',
+    'e',
+    'a',
+];
+
+function stripRomanianSuffix(token: string): string {
+    for (const suffix of ROMANIAN_GRAMMAR_SUFFIXES) {
+        if (
+            token.endsWith(suffix) &&
+            token.length - suffix.length >= 3 &&
+            !(suffix.length === 1 && token.length < 5)
+        ) {
+            return token.slice(0, token.length - suffix.length);
+        }
+    }
+    return token;
+}
+
 const COMMON_CASINO_SUFFIXES = ['bet', 'casino', 'cazino', 'slots', 'gaming', 'games', 'club', 'play'];
 
 function removeCommonSuffix(token: string): string {
@@ -182,11 +216,13 @@ export function checkH1Content(sourceText: string, h1Text: string): boolean {
     const buildVariants = (token: string): string[] => {
         const normalizedToken = token.toLowerCase();
         const collapsedToken = collapseToAlphaNumeric(token);
-        const trimmedToken = removeCommonSuffix(normalizedToken);
+        const romanianTrimmed = stripRomanianSuffix(normalizedToken);
+        const trimmedToken = removeCommonSuffix(romanianTrimmed);
         const collapsedTrimmed = collapseToAlphaNumeric(trimmedToken);
         const variants = new Set<string>();
         if (normalizedToken.length >= 2) variants.add(normalizedToken);
         if (collapsedToken.length >= 3) variants.add(collapsedToken);
+        if (romanianTrimmed.length >= 2) variants.add(romanianTrimmed);
         if (trimmedToken.length >= 2) variants.add(trimmedToken);
         if (collapsedTrimmed.length >= 3) variants.add(collapsedTrimmed);
         return Array.from(variants);
@@ -208,10 +244,16 @@ export function checkH1Content(sourceText: string, h1Text: string): boolean {
     }
 
     const collapsedSource = collapseToAlphaNumeric(sourceText);
-    const trimmedSource = removeCommonSuffix(sourceText.toLowerCase());
+    const romanianTrimmedSource = stripRomanianSuffix(sourceText.toLowerCase());
+    const trimmedSource = removeCommonSuffix(romanianTrimmedSource);
     const collapsedTrimmedSource = collapseToAlphaNumeric(trimmedSource);
 
     if (collapsedSource.length >= 3 && collapsedH1.includes(collapsedSource)) {
+        return true;
+    }
+
+    const collapsedRomanianTrimmed = collapseToAlphaNumeric(romanianTrimmedSource);
+    if (collapsedRomanianTrimmed.length >= 3 && collapsedH1.includes(collapsedRomanianTrimmed)) {
         return true;
     }
 

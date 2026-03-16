@@ -55,6 +55,51 @@ function splitCamelCaseAndNumbers(text: string): string[] {
     return cleanedText.trim().toLowerCase().split(/\s+/).filter(Boolean); 
 }
 
+const ROMANIAN_GRAMMAR_SUFFIXES = [
+    'urilor',
+    'iilor',
+    'iile',
+    'ului',
+    'elor',
+    'ilor',
+    'urile',
+    'lor',
+    'lele',
+    'lele',
+    'ele',
+    'ile',
+    'rei',
+    'ii',
+    'ul',
+    'le',
+    'i',
+    'e',
+    'a',
+];
+
+function stripRomanianSuffix(token: string): string {
+    for (const suffix of ROMANIAN_GRAMMAR_SUFFIXES) {
+        if (
+            token.endsWith(suffix) &&
+            token.length - suffix.length >= 3 &&
+            !(suffix.length === 1 && token.length < 5) // avoid over-trimming tiny words for single-letter suffixes
+        ) {
+            return token.slice(0, token.length - suffix.length);
+        }
+    }
+    return token;
+}
+
+function expandRomanianVariants(token: string): string[] {
+    const variants = new Set<string>();
+    variants.add(token);
+    const trimmed = stripRomanianSuffix(token);
+    if (trimmed !== token) {
+        variants.add(trimmed);
+    }
+    return Array.from(variants);
+}
+
 // Check if H1 contains at least one word from the source text
 function checkH1Content(sourceText: string, h1Text: string): boolean {
     const normalizedH1 = stripDiacritics(h1Text).toLowerCase();
@@ -73,7 +118,9 @@ function checkH1Content(sourceText: string, h1Text: string): boolean {
     if (sourceTokens.length === 0) return true;
 
     // Check if any significant token is present in the normalized H1 text
-    const isMatch = sourceTokens.some(token => normalizedH1.includes(token));
+    const isMatch = sourceTokens.some(token => {
+        return expandRomanianVariants(token).some(variant => normalizedH1.includes(variant));
+    });
 
     return isMatch;
 }
