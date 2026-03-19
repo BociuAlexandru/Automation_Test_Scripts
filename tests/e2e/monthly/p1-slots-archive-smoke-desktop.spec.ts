@@ -22,6 +22,10 @@ type SlotArchiveConfig = {
     slotNameSelector?: string;
     loadMoreSelector?: string;
     loadMoreMaxClicks?: number;
+    loadMoreAllowedDataIds?: string[];
+    loadMorePerButtonLimit?: number;
+    multiLoadMore?: boolean;
+    forceIsolatedValidation?: boolean;
 };
 
 const SLOT_ARCHIVE_CONFIGS: Partial<Record<SiteName, SlotArchiveConfig>> = {
@@ -55,12 +59,33 @@ const SLOT_ARCHIVE_CONFIGS: Partial<Record<SiteName, SlotArchiveConfig>> = {
         loadMoreSelector: '#load-more-button',
         loadMoreMaxClicks: 80,
     },
+    'jocuricazinouri': {
+        archivePath: '/jocuri-casino-gratis/',
+        slotCardSelector: '.card-play',
+        slotLinkSelector: '.card-play__wrapper .button--internal',
+        slotHoverSelector: '.card-play',
+        slotLinkRequiresHover: true,
+        slotNameSelector: '.card-play__wrapper .p-h6, .card-play__wrapper p.p-h6',
+        h1Selector: 'h1',
+        paginationNextSelector: '.posts-pagination .page-item.next a.page-link',
+        paginationLimit: 50,
+    },
+    'supercazino': {
+        archivePath: '/sloturi-gratis/',
+        slotCardSelector: '.card_inner.single-slot-in-card',
+        slotLinkSelector: '.card_inner.single-slot-in-card a.btn.btn--1',
+        slotNameSelector: '.card_inner.single-slot-in-card .sc-h4-slot-card',
+        h1Selector: 'h1',
+        forceIsolatedValidation: true,
+    },
 };
 
 const SUPPORTED_SLOT_ARCHIVE_PROJECTS = new Set<SiteName>([
     'casino.com.ro',
     'jocsloturi',
     'jocpacanele',
+    'jocuricazinouri',
+    'supercazino',
     // Future: add more projects here (excluding beturi which has no slots)
 ]);
 
@@ -75,6 +100,266 @@ const CSV_HEADER = 'Project,Test ID,Failure Type,Details,Failing URL\n';
 
 function getCsvFilePath(projectName: SiteName) {
     return path.join(BASE_REPORT_DIR, `${projectName}_p1-slots-archive-smoke-desktop_${RUN_TIMESTAMP}.csv`);
+}
+
+async function processSupercazinoRuleta(
+    page: Page,
+    siteName: SiteName,
+    baseURL: string,
+    config: SlotArchiveConfig,
+    archiveUrl: string,
+    softFailures: string[],
+) {
+    const section = page.locator('.term-container').filter({ has: page.locator('h2:has-text("Ruletă")') }).first();
+    const sectionVisible = await section.isVisible().catch(() => false);
+    if (!sectionVisible) {
+        const detail = 'Ruletă section not found on archive page.';
+        logFailure(`[${siteName}] ${detail}`);
+        logFailureToCsv(siteName, `${TEST_ID}.section`, 'Missing Category Section', detail, archiveUrl);
+        softFailures.push(`[${siteName}] ${detail}`);
+        return;
+    }
+
+    const slotCards = section.locator('.card_inner.single-slot-in-card');
+
+    const slotCount = await slotCards.count();
+    if (slotCount === 0) {
+        const detail = 'No slot cards detected in Ruletă section.';
+        logFailure(`[${siteName}] ${detail}`);
+        logFailureToCsv(siteName, `${TEST_ID}.collect`, 'Missing Slots', detail, archiveUrl);
+        softFailures.push(`[${siteName}] ${detail}`);
+        return;
+    }
+
+    logInfo(`[${siteName}] Ruletă: detected ${slotCount} slot card(s).`);
+    const slotMeta = await collectSupercazinoSlotMeta(slotCards);
+    await validateSupercazinoSlotMetaList(
+        slotMeta,
+        'Ruletă',
+        slotCount,
+        page,
+        siteName,
+        baseURL,
+        config,
+        archiveUrl,
+        softFailures,
+    );
+}
+
+async function processSupercazinoSpeciale(
+    page: Page,
+    siteName: SiteName,
+    baseURL: string,
+    config: SlotArchiveConfig,
+    archiveUrl: string,
+    softFailures: string[],
+) {
+    const section = page.locator('.term-container').filter({ has: page.locator('h2:has-text("Speciale")') }).first();
+    const sectionVisible = await section.isVisible().catch(() => false);
+    if (!sectionVisible) {
+        const detail = 'Speciale section not found on archive page.';
+        logFailure(`[${siteName}] ${detail}`);
+        logFailureToCsv(siteName, `${TEST_ID}.section`, 'Missing Category Section', detail, archiveUrl);
+        softFailures.push(`[${siteName}] ${detail}`);
+        return;
+    }
+
+    const slotCards = section.locator('.card_inner.single-slot-in-card');
+    await expandSupercazinoSectionWithLoadMore(
+        section,
+        slotCards,
+        '11',
+        15,
+        page,
+        siteName,
+        archiveUrl,
+        softFailures,
+    );
+
+    const slotCount = await slotCards.count();
+    if (slotCount === 0) {
+        const detail = 'No slot cards detected in Speciale section.';
+        logFailure(`[${siteName}] ${detail}`);
+        logFailureToCsv(siteName, `${TEST_ID}.collect`, 'Missing Slots', detail, archiveUrl);
+        softFailures.push(`[${siteName}] ${detail}`);
+        return;
+    }
+
+    logInfo(`[${siteName}] Speciale: detected ${slotCount} slot card(s).`);
+    const slotMeta = await collectSupercazinoSlotMeta(slotCards);
+    await validateSupercazinoSlotMetaList(
+        slotMeta,
+        'Speciale',
+        slotCount,
+        page,
+        siteName,
+        baseURL,
+        config,
+        archiveUrl,
+        softFailures,
+    );
+}
+
+async function processSupercazinoPacanele7777(
+    page: Page,
+    siteName: SiteName,
+    baseURL: string,
+    config: SlotArchiveConfig,
+    archiveUrl: string,
+    softFailures: string[],
+) {
+    const section = page.locator('.term-container').filter({ has: page.locator('h2:has-text("Păcănele 7777")') }).first();
+    const sectionVisible = await section.isVisible().catch(() => false);
+    if (!sectionVisible) {
+        const detail = 'Păcănele 7777 section not found on archive page.';
+        logFailure(`[${siteName}] ${detail}`);
+        logFailureToCsv(siteName, `${TEST_ID}.section`, 'Missing Category Section', detail, archiveUrl);
+        softFailures.push(`[${siteName}] ${detail}`);
+        return;
+    }
+
+    const slotCards = section.locator('.card_inner.single-slot-in-card');
+    await expandSupercazinoSectionWithLoadMore(
+        section,
+        slotCards,
+        '49',
+        20,
+        page,
+        siteName,
+        archiveUrl,
+        softFailures,
+    );
+
+    const slotCount = await slotCards.count();
+    if (slotCount === 0) {
+        const detail = 'No slot cards detected in Păcănele 7777 section.';
+        logFailure(`[${siteName}] ${detail}`);
+        logFailureToCsv(siteName, `${TEST_ID}.collect`, 'Missing Slots', detail, archiveUrl);
+        softFailures.push(`[${siteName}] ${detail}`);
+        return;
+    }
+
+    logInfo(`[${siteName}] Păcănele 7777: detected ${slotCount} slot card(s).`);
+    const slotMeta = await collectSupercazinoSlotMeta(slotCards);
+    await validateSupercazinoSlotMetaList(
+        slotMeta,
+        'Păcănele 7777',
+        slotCount,
+        page,
+        siteName,
+        baseURL,
+        config,
+        archiveUrl,
+        softFailures,
+    );
+}
+
+async function processSupercazinoNoi(
+    page: Page,
+    siteName: SiteName,
+    baseURL: string,
+    config: SlotArchiveConfig,
+    archiveUrl: string,
+    softFailures: string[],
+) {
+    const section = page.locator('.term-container').filter({ has: page.locator('h2:has-text("Noi")') }).first();
+    const sectionVisible = await section.isVisible().catch(() => false);
+    if (!sectionVisible) {
+        const detail = 'Noi section not found on archive page.';
+        logFailure(`[${siteName}] ${detail}`);
+        logFailureToCsv(siteName, `${TEST_ID}.section`, 'Missing Category Section', detail, archiveUrl);
+        softFailures.push(`[${siteName}] ${detail}`);
+        return;
+    }
+
+    const slotCards = section.locator('.card_inner.single-slot-in-card');
+    await expandSupercazinoSectionWithLoadMore(
+        section,
+        slotCards,
+        '10',
+        15,
+        page,
+        siteName,
+        archiveUrl,
+        softFailures,
+    );
+
+    const slotCount = await slotCards.count();
+    if (slotCount === 0) {
+        const detail = 'No slot cards detected in Noi section.';
+        logFailure(`[${siteName}] ${detail}`);
+        logFailureToCsv(siteName, `${TEST_ID}.collect`, 'Missing Slots', detail, archiveUrl);
+        softFailures.push(`[${siteName}] ${detail}`);
+        return;
+    }
+
+    logInfo(`[${siteName}] Noi: detected ${slotCount} slot card(s).`);
+    const slotMeta = await collectSupercazinoSlotMeta(slotCards);
+    await validateSupercazinoSlotMetaList(
+        slotMeta,
+        'Noi',
+        slotCount,
+        page,
+        siteName,
+        baseURL,
+        config,
+        archiveUrl,
+        softFailures,
+    );
+}
+
+async function processSupercazinoFructe(
+    page: Page,
+    siteName: SiteName,
+    baseURL: string,
+    config: SlotArchiveConfig,
+    archiveUrl: string,
+    softFailures: string[],
+) {
+    const section = page.locator('.term-container').filter({ has: page.locator('h2:has-text("Fructe")') }).first();
+    const sectionVisible = await section.isVisible().catch(() => false);
+    if (!sectionVisible) {
+        const detail = 'Fructe section not found on archive page.';
+        logFailure(`[${siteName}] ${detail}`);
+        logFailureToCsv(siteName, `${TEST_ID}.section`, 'Missing Category Section', detail, archiveUrl);
+        softFailures.push(`[${siteName}] ${detail}`);
+        return;
+    }
+
+    const slotCards = section.locator('.card_inner.single-slot-in-card');
+    await expandSupercazinoSectionWithLoadMore(
+        section,
+        slotCards,
+        '16',
+        15,
+        page,
+        siteName,
+        archiveUrl,
+        softFailures,
+    );
+
+    const slotCount = await slotCards.count();
+    if (slotCount === 0) {
+        const detail = 'No slot cards detected in Fructe section.';
+        logFailure(`[${siteName}] ${detail}`);
+        logFailureToCsv(siteName, `${TEST_ID}.collect`, 'Missing Slots', detail, archiveUrl);
+        softFailures.push(`[${siteName}] ${detail}`);
+        return;
+    }
+
+    logInfo(`[${siteName}] Fructe: detected ${slotCount} slot card(s).`);
+    const slotMeta = await collectSupercazinoSlotMeta(slotCards);
+    await validateSupercazinoSlotMetaList(
+        slotMeta,
+        'Fructe',
+        slotCount,
+        page,
+        siteName,
+        baseURL,
+        config,
+        archiveUrl,
+        softFailures,
+    );
 }
 
 async function processSlotsWithLoadMore(
@@ -92,6 +377,8 @@ async function processSlotsWithLoadMore(
     let processed = 0;
     let loadMoreClicks = 0;
     const maxClicks = config.loadMoreMaxClicks ?? 100;
+    const multiLoadMore = Boolean(config.multiLoadMore);
+    const perButtonClicks: Record<string, number> = {};
 
     while (true) {
         const slotCards = page.locator(config.slotCardSelector);
@@ -105,7 +392,7 @@ async function processSlotsWithLoadMore(
             return;
         }
 
-        if (processed < slotCount) {
+        while (processed < slotCount) {
             await testSlotCardByIndex(
                 page,
                 siteName,
@@ -118,12 +405,42 @@ async function processSlotsWithLoadMore(
                 softFailures,
             );
             processed += 1;
-            continue;
         }
 
         if (loadMoreClicks >= maxClicks) {
             logInfo(`[${siteName}] Reached load-more guard (${maxClicks} clicks). Ending.`);
             break;
+        }
+
+        if (multiLoadMore) {
+            const nextButton = await findNextLoadMoreButton(page, config, perButtonClicks);
+            if (!nextButton) {
+                logInfo(`[${siteName}] No further load-more buttons available. Ending slot scan.`);
+                break;
+            }
+
+            const loaded = await triggerLoadMore(
+                page,
+                siteName,
+                config,
+                slotCount,
+                loadMoreClicks + 1,
+                nextButton.button,
+                nextButton.descriptor,
+            );
+            if (nextButton.termId) {
+                perButtonClicks[nextButton.termId] = (perButtonClicks[nextButton.termId] ?? 0) + 1;
+            }
+
+            if (!loaded) {
+                logInfo(`[${siteName}] Load-more target ${nextButton.descriptor} inactive. Trying remaining buttons.`);
+                continue;
+            }
+
+            loadMoreClicks += 1;
+            await closeOptionalPopupIfPresent(page, siteName);
+            await closeCookiePopupIfPresent(page, siteName);
+            continue;
         }
 
         const loaded = await triggerLoadMore(
@@ -149,9 +466,12 @@ async function triggerLoadMore(
     config: SlotArchiveConfig,
     previousCount: number,
     attempt: number,
+    customButton?: Locator,
+    descriptorOverride?: string,
 ) {
     const selector = config.loadMoreSelector!;
-    const loadMoreButton = page.locator(selector).first();
+    const loadMoreButton = customButton ?? page.locator(selector).first();
+    const descriptor = descriptorOverride ?? `selector "${selector}"`;
     const isVisible = await loadMoreButton.isVisible().catch(() => false);
     const isEnabled = await loadMoreButton.isEnabled().catch(() => false);
     if (!isVisible || !isEnabled) {
@@ -159,7 +479,7 @@ async function triggerLoadMore(
     }
 
     await loadMoreButton.scrollIntoViewIfNeeded().catch(() => undefined);
-    logInfo(`[${siteName}] Triggering load-more (#${attempt}) using selector "${selector}".`);
+    logInfo(`[${siteName}] Triggering load-more (#${attempt}) via ${descriptor}.`);
 
     try {
         await loadMoreButton.click({ timeout: 8000, force: true });
@@ -175,6 +495,62 @@ async function triggerLoadMore(
     }
     logInfo(`[${siteName}] Load-more (#${attempt}) succeeded. Total slots now: ${increased}.`);
     return true;
+}
+
+type MultiLoadMoreTarget = {
+    button: Locator;
+    descriptor: string;
+    termId?: string;
+};
+
+async function findNextLoadMoreButton(
+    page: Page,
+    config: SlotArchiveConfig,
+    perButtonClicks: Record<string, number>,
+): Promise<MultiLoadMoreTarget | null> {
+    const selector = config.loadMoreSelector;
+    if (!selector) return null;
+
+    const perButtonLimit = config.loadMorePerButtonLimit ?? 10;
+    const allowedIds = config.loadMoreAllowedDataIds;
+
+    if (!allowedIds || allowedIds.length === 0) {
+        const fallbackButton = page.locator(selector).first();
+        if ((await fallbackButton.count()) === 0) {
+            return null;
+        }
+        const descriptor = `selector "${selector}"`;
+        const isVisible = await fallbackButton.isVisible().catch(() => false);
+        const isEnabled = await fallbackButton.isEnabled().catch(() => false);
+        if (!isVisible || !isEnabled) {
+            return null;
+        }
+        return { button: fallbackButton, descriptor };
+    }
+
+    for (const termId of allowedIds) {
+        const clicksSoFar = perButtonClicks[termId] ?? 0;
+        if (clicksSoFar >= perButtonLimit) {
+            continue;
+        }
+
+        const buttonLocator = page.locator(`${selector}[data-term-id="${termId}"]`).first();
+        if ((await buttonLocator.count()) === 0) {
+            continue;
+        }
+
+        const isVisible = await buttonLocator.isVisible().catch(() => false);
+        const isEnabled = await buttonLocator.isEnabled().catch(() => false);
+        if (!isVisible || !isEnabled) {
+            continue;
+        }
+
+        const termUrl = (await buttonLocator.getAttribute('data-term-url')) ?? '';
+        const descriptor = `term ${termId}${termUrl ? ` (${termUrl})` : ''}`;
+        return { button: buttonLocator, descriptor, termId };
+    }
+
+    return null;
 }
 
 async function waitForSlotCountIncrease(
@@ -245,7 +621,15 @@ test.describe('P1 Monthly • Slot Archive Smoke • Desktop', () => {
         const archiveUrl = new URL(config.archivePath, baseURL).toString();
         await navigateToArchivePage(page, archiveUrl, projectName);
 
-        if (config.loadMoreSelector) {
+        if (projectName === 'supercazino') {
+            await processSupercazinoSloturiPopulare(page, projectName, baseURL, config, archiveUrl, softFailures);
+            await processSupercazinoClasice(page, projectName, baseURL, config, archiveUrl, softFailures);
+            await processSupercazinoFructe(page, projectName, baseURL, config, archiveUrl, softFailures);
+            await processSupercazinoNoi(page, projectName, baseURL, config, archiveUrl, softFailures);
+            await processSupercazinoPacanele7777(page, projectName, baseURL, config, archiveUrl, softFailures);
+            await processSupercazinoSpeciale(page, projectName, baseURL, config, archiveUrl, softFailures);
+            await processSupercazinoRuleta(page, projectName, baseURL, config, archiveUrl, softFailures);
+        } else if (config.loadMoreSelector) {
             await processSlotsWithLoadMore(page, projectName, baseURL, config, archiveUrl, softFailures);
         } else {
             let paginationPage = 1;
@@ -339,6 +723,204 @@ async function processSlotsOnCurrentPage(
     }
 }
 
+async function processSupercazinoSloturiPopulare(
+    page: Page,
+    siteName: SiteName,
+    baseURL: string,
+    config: SlotArchiveConfig,
+    archiveUrl: string,
+    softFailures: string[],
+) {
+    const slotSection = page.locator('.card_slots').first();
+    const sectionVisible = await slotSection.isVisible().catch(() => false);
+    if (!sectionVisible) {
+        const detail = 'Sloturi Populare section not found on archive page.';
+        logFailure(`[${siteName}] ${detail}`);
+        logFailureToCsv(siteName, `${TEST_ID}.section`, 'Missing Category Section', detail, archiveUrl);
+        softFailures.push(`[${siteName}] ${detail}`);
+        return;
+    }
+
+    const slotCards = slotSection.locator('.card_inner.single-slot-in-card');
+    const slotCount = await slotCards.count();
+
+    if (slotCount === 0) {
+        const detail = 'No slot cards detected in Sloturi Populare section.';
+        logFailure(`[${siteName}] ${detail}`);
+        logFailureToCsv(siteName, `${TEST_ID}.collect`, 'Missing Slots', detail, archiveUrl);
+        softFailures.push(`[${siteName}] ${detail}`);
+        return;
+    }
+
+    logInfo(`[${siteName}] Sloturi Populare: detected ${slotCount} slot card(s).`);
+    const slotMeta = await collectSupercazinoSlotMeta(slotCards);
+    await validateSupercazinoSlotMetaList(
+        slotMeta,
+        'Sloturi Populare',
+        slotCount,
+        page,
+        siteName,
+        baseURL,
+        config,
+        archiveUrl,
+        softFailures,
+    );
+}
+
+async function processSupercazinoClasice(
+    page: Page,
+    siteName: SiteName,
+    baseURL: string,
+    config: SlotArchiveConfig,
+    archiveUrl: string,
+    softFailures: string[],
+) {
+    const section = page.locator('.term-container').filter({ has: page.locator('h2:has-text("Clasice")') }).first();
+    const sectionVisible = await section.isVisible().catch(() => false);
+    if (!sectionVisible) {
+        const detail = 'Clasice section not found on archive page.';
+        logFailure(`[${siteName}] ${detail}`);
+        logFailureToCsv(siteName, `${TEST_ID}.section`, 'Missing Category Section', detail, archiveUrl);
+        softFailures.push(`[${siteName}] ${detail}`);
+        return;
+    }
+
+    const slotCards = section.locator('.card_inner.single-slot-in-card');
+    await expandSupercazinoSectionWithLoadMore(
+        section,
+        slotCards,
+        '14',
+        15,
+        page,
+        siteName,
+        archiveUrl,
+        softFailures,
+    );
+
+    const slotCount = await slotCards.count();
+    if (slotCount === 0) {
+        const detail = 'No slot cards detected in Clasice section.';
+        logFailure(`[${siteName}] ${detail}`);
+        logFailureToCsv(siteName, `${TEST_ID}.collect`, 'Missing Slots', detail, archiveUrl);
+        softFailures.push(`[${siteName}] ${detail}`);
+        return;
+    }
+
+    logInfo(`[${siteName}] Clasice: detected ${slotCount} slot card(s).`);
+    const slotMeta = await collectSupercazinoSlotMeta(slotCards);
+    await validateSupercazinoSlotMetaList(
+        slotMeta,
+        'Clasice',
+        slotCount,
+        page,
+        siteName,
+        baseURL,
+        config,
+        archiveUrl,
+        softFailures,
+    );
+}
+
+type SupercazinoSlotMeta = { index: number; name: string; href: string };
+
+async function collectSupercazinoSlotMeta(slotCards: Locator): Promise<SupercazinoSlotMeta[]> {
+    return slotCards.evaluateAll((elements) =>
+        elements.map((el, index) => {
+            const titleAnchor = el.querySelector('.sc-h4-slot-card');
+            const ctaAnchor = el.querySelector('a.btn.btn--1');
+            const href =
+                (titleAnchor?.getAttribute('href') || ctaAnchor?.getAttribute('href') || '').trim();
+            const name = (titleAnchor?.textContent || ctaAnchor?.textContent || `Slot ${index + 1}`).trim();
+            return { index, name, href };
+        }),
+    );
+}
+
+async function validateSupercazinoSlotMetaList(
+    slotMeta: SupercazinoSlotMeta[],
+    contextLabel: string,
+    totalSlots: number,
+    page: Page,
+    siteName: SiteName,
+    baseURL: string,
+    config: SlotArchiveConfig,
+    archiveUrl: string,
+    softFailures: string[],
+) {
+    for (const meta of slotMeta) {
+        const slotNumber = meta.index + 1;
+        if (!meta.href) {
+            const detail = `Slot card #${slotNumber} in ${contextLabel} has no href.`;
+            logFailure(detail);
+            logFailureToCsv(siteName, `${TEST_ID}.href`, 'Missing href on slot card', detail, archiveUrl);
+            softFailures.push(`[${siteName}] ${detail}`);
+            continue;
+        }
+
+        const slotName = meta.name || `Slot ${slotNumber}`;
+        const absoluteSlotUrl = buildAbsoluteUrl(baseURL, meta.href);
+        const stepLabel = `${contextLabel} • Slot ${slotNumber}/${totalSlots} • ${slotName}`;
+        logInfo(`[${siteName}] ${stepLabel} — validating ${absoluteSlotUrl}`);
+
+        await validateSlotInIsolatedPage(
+            page,
+            siteName,
+            config,
+            slotName,
+            absoluteSlotUrl,
+            stepLabel,
+            softFailures,
+        );
+    }
+}
+
+async function expandSupercazinoSectionWithLoadMore(
+    section: Locator,
+    slotCards: Locator,
+    termId: string,
+    maxClicks: number,
+    page: Page,
+    siteName: SiteName,
+    archiveUrl: string,
+    softFailures: string[],
+) {
+    let clicks = 0;
+    while (clicks < maxClicks) {
+        const loadMoreButton = section.locator(`.load-more-btn[data-term-id="${termId}"]`).first();
+        const isVisible = await loadMoreButton.isVisible().catch(() => false);
+        const isEnabled = await loadMoreButton.isEnabled().catch(() => false);
+        if (!isVisible || !isEnabled) {
+            break;
+        }
+
+        const previousCount = await slotCards.count();
+        try {
+            await loadMoreButton.scrollIntoViewIfNeeded().catch(() => undefined);
+            await loadMoreButton.click({ timeout: 8000, force: true });
+        } catch (error) {
+            const detail = `Load-more click failed for term ${termId}. ${formatError(error)}`;
+            logFailure(`[${siteName}] ${detail}`);
+            logFailureToCsv(siteName, `${TEST_ID}.loadmore`, 'Load-more Failure', detail, archiveUrl);
+            softFailures.push(`[${siteName}] ${detail}`);
+            break;
+        }
+
+        const increased = await waitForSlotCountIncrease(page, '.card_inner.single-slot-in-card', previousCount, 12000);
+        if (!increased) {
+            logInfo(`[${siteName}] Load-more for term ${termId} did not add slots within timeout.`);
+            break;
+        }
+
+        clicks += 1;
+        await closeOptionalPopupIfPresent(page, siteName);
+        await closeCookiePopupIfPresent(page, siteName);
+    }
+}
+type SlotTestOptions = {
+    slotCardsLocator?: Locator;
+    contextLabel?: string;
+};
+
 async function testSlotCardByIndex(
     page: Page,
     siteName: SiteName,
@@ -349,8 +931,10 @@ async function testSlotCardByIndex(
     slotIndex: number,
     totalSlots: number,
     softFailures: string[],
+    options: SlotTestOptions = {},
 ) {
-    const slotCards = page.locator(config.slotCardSelector);
+    const { slotCardsLocator, contextLabel } = options;
+    const slotCards = slotCardsLocator ?? page.locator(config.slotCardSelector);
     const card = slotCards.nth(slotIndex);
     await card.scrollIntoViewIfNeeded().catch(() => undefined);
     await expect(card, `Slot card #${slotIndex + 1} should be visible`).toBeVisible({ timeout: 15000 });
@@ -374,10 +958,11 @@ async function testSlotCardByIndex(
     const slotName = await deriveSlotName(card, slotLinkLocator, slotHref, config);
     const absoluteSlotUrl = buildAbsoluteUrl(baseURL, slotHref);
 
-    const stepLabel = `Page ${pageNumber} • Slot ${slotIndex + 1}/${totalSlots} • ${slotName}`;
+    const pageLabel = contextLabel ?? `Page ${pageNumber}`;
+    const stepLabel = `${pageLabel} • Slot ${slotIndex + 1}/${totalSlots} • ${slotName}`;
     logInfo(`[${siteName}] ${stepLabel} — opening ${absoluteSlotUrl}`);
 
-    const useIsolatedPage = Boolean(config.loadMoreSelector);
+    const useIsolatedPage = Boolean(config.loadMoreSelector || config.forceIsolatedValidation);
     if (useIsolatedPage) {
         await validateSlotInIsolatedPage(
             page,
