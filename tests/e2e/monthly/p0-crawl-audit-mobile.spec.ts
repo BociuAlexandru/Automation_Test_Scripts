@@ -5,6 +5,7 @@ import { siteConfigs, type SiteName } from "../config/sites";
 import { crawlSite } from "../config/crawler";
 import * as fs from "fs"; // ⬅️ Reintroducing file system module
 import path from "path";
+import "../helpers/inactivityWatchdog";
 
 // ✅ Force iPhone 13 mobile context for this spec
 const { defaultBrowserType: _ignored, ...iPhone13Descriptor } = devices["iPhone 13"];

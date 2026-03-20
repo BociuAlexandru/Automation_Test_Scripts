@@ -1,5 +1,4 @@
 import { expect, Locator, Page, test } from '@playwright/test';
-
 import {
     casinoReviewSiteConfigs,
     CasinoReviewSiteConfig,
@@ -14,6 +13,7 @@ import {
     ensureCsvInitialized,
     logFailureToCsv,
 } from '../helpers/mobileMenuUtils';
+import '../helpers/inactivityWatchdog';
 
 type ReviewLinkTarget = {
     casinoName: string;

@@ -1,6 +1,7 @@
 ﻿import { expect, Locator, Page, test } from '@playwright/test';
 import * as fs from 'fs';
 import path from 'path';
+import '../helpers/inactivityWatchdog';
 
 type SlotDetail = {
     title: string;

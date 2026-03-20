@@ -5,6 +5,7 @@ import { siteConfigs, type SiteName } from "../config/sites";
 import { crawlSite } from "../config/crawler";
 import * as fs from "fs"; // ⬅️ Reintroducing file system module
 import path from "path";
+import "../helpers/inactivityWatchdog";
 
 // Define the structure for a soft failure (includes csvRow for logging)
 type SoftFailure = {

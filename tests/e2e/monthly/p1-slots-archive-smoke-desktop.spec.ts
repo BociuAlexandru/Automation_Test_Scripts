@@ -1,6 +1,7 @@
 import { expect, Locator, Page, Response, test } from '@playwright/test';
 import path from 'path';
 import * as fs from 'fs';
+import '../helpers/inactivityWatchdog';
 
 import { SiteName } from '../config/sites';
 import {
