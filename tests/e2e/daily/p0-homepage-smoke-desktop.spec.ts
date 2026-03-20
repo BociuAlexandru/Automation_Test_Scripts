@@ -5,6 +5,7 @@ import { test, expect, TestInfo, Page, Locator } from '@playwright/test';
 import * as fs from "fs"; 
 import path from "path"; 
 import { siteConfigs, SiteName } from '../config/sites'; 
+import '../helpers/inactivityWatchdog';
 
 /**
  * Helper to get the siteName from the Playwright Project Name.
@@ -351,6 +352,9 @@ test('H2: Main Navigation Functionality - Top Menu and Logo Link Check', async (
         } else if (siteName === 'jocuricazinouri') {
             // JC logo wrapper described by .jcTopLogo > a.logo-wrapper
             logoSelector = '.jcTopLogo a.logo-wrapper';
+        } else if (siteName === 'supercazino') {
+            // SC desktop header keeps the logo inside the mega menu top bar
+            logoSelector = '.mega-menu-desktop-container--top-part--logo, .mega-menu-desktop-container--logo a';
         } else {
             logoSelector = 'a[href="/"]'; // Default fallback
         }

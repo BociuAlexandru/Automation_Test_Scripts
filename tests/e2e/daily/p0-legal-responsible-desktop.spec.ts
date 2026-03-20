@@ -9,11 +9,10 @@
 // 💥 CRITICAL IMPORTS
 // Playwright's core testing functions and TypeScript types.
 import { test, expect, type TestInfo, type Page } from '@playwright/test'; 
-// Node.js modules for file system (fs) and path manipulation, used for CSV logging.
 import * as fs from "fs"; 
 import path from "path"; 
-// Configuration for the target sites.
 import { siteConfigs, SiteName } from '../config/sites'; 
+import '../helpers/inactivityWatchdog';
 
 /**
  * Helper to get the siteName from the Playwright Project Name.

@@ -3,6 +3,7 @@
 // CRITICAL IMPORTS
 import { test, expect, TestInfo, devices, Locator } from '@playwright/test'; 
 import { siteConfigs, SiteName } from '../config/sites'; 
+import '../helpers/inactivityWatchdog';
 import {
     SITE_TO_MENU_MAP,
     MOBILE_MENU_CONFIG,

@@ -15,6 +15,7 @@ import * as fs from "fs";
 import path from "path"; 
 // Configuration for the target sites.
 import { siteConfigs, SiteName } from '../config/sites'; 
+import '../helpers/inactivityWatchdog';
 
 /**
  * Helper to get the siteName from the Playwright Project Name.
