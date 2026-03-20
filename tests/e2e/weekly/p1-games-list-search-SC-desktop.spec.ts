@@ -4,6 +4,7 @@
 import { test, expect, Page } from '@playwright/test';
 import * as fs from 'fs';
 import path from 'path';
+import '../helpers/inactivityWatchdog';
 
 // --- PROJECT CONFIGURATION DATA ---
 // Holds selectors and behavior toggles for supported SC variants (currently one).

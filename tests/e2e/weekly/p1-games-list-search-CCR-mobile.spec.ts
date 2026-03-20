@@ -1,6 +1,7 @@
 import { test, expect, devices, Page, Locator } from '@playwright/test';
 import * as fs from 'fs';
 import path from 'path';
+import '../helpers/inactivityWatchdog';
 // Mobile slot search + demo smoke for casino.com.ro with iPhone 13 emulation and CSV logging.
 
 // --- DEVICE SETUP -----------------------------------------------------------

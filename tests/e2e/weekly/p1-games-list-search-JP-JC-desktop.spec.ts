@@ -1,9 +1,10 @@
-// File Path: tests/e2e/p1-games-list-search.spec.ts
+// File Path: tests/e2e/p1-games-list-search-JP-JC-desktop.spec.ts
 
 import { Page, test, expect } from '@playwright/test';
 
 import * as fs from 'fs';
 import path from 'path';
+import '../helpers/inactivityWatchdog';
 
 // --- PROJECT CONFIGURATION DATA ---
 // Shared desktop smoke test for JocPacanele and JocuriCazinouri with site-specific selectors.

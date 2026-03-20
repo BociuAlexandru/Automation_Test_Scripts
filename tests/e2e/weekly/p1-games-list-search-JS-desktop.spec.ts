@@ -1,6 +1,7 @@
 import { test, expect, Page, Locator } from '@playwright/test';
 import * as fs from 'fs';
 import path from 'path';
+import '../helpers/inactivityWatchdog';
 // Jocsloturi desktop smoke: iterate slot cards, launch demos, and log failures per step.
 
 const BASE_URL = 'https://jocsloturi.ro/sloturi-online-gratis/';

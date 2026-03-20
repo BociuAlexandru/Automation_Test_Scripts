@@ -1,6 +1,7 @@
 import { test, expect, devices, Page, Locator } from '@playwright/test';
 import * as fs from 'fs';
 import path from 'path';
+import '../helpers/inactivityWatchdog';
 
 // --- DEVICE & CONTEXT SETUP ------------------------------------------------
 // Mobile suite mirrors end-users on iPhone 13 to exercise responsive layouts.

@@ -1,6 +1,7 @@
 import { devices, expect, Locator, Page, test } from '@playwright/test';
 import * as fs from 'fs';
 import path from 'path';
+import '../helpers/inactivityWatchdog';
 
 // --- DEVICE SETUP -----------------------------------------------------------
 // Set up iPhone 13 device descriptor for mobile testing.

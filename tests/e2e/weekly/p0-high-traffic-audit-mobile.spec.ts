@@ -3,6 +3,7 @@ import { test, devices, type Response } from "@playwright/test";
 import { siteConfigs, type SiteName } from "../config/sites";
 import * as fs from "fs"; 
 import path from "path";
+import "../helpers/inactivityWatchdog";
 // Core Playwright APIs plus per-site config and Node helpers (fs/path) power the auditing workflow.
 
 // ✅ Force iPhone 13 device context for this mobile audit

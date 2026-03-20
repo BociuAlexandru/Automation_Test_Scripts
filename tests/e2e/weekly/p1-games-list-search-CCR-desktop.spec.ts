@@ -1,6 +1,7 @@
 import { test, expect, Page, Locator } from '@playwright/test';
 import * as fs from 'fs';
 import path from 'path';
+import '../helpers/inactivityWatchdog';
 // Desktop smoke for casino.com.ro slot search/demo flow with CSV logging + audited steps.
 
 const BASE_URL = 'https://casino.com.ro/sloturi/';

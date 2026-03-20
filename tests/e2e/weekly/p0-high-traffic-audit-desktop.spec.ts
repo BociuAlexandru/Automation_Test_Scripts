@@ -3,6 +3,7 @@ import { test, devices, type Response } from "@playwright/test";
 import { siteConfigs, type SiteName } from "../config/sites";
 import * as fs from "fs"; 
 import path from "path";
+import "../helpers/inactivityWatchdog";
 // Imports bring in Playwright APIs, site configuration, and Node utilities used throughout the audit.
 
 // Define the structure for a soft failure
